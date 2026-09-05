@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Emergency Triage — Emergency Hotline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+<style>
+/* ── Design tokens (same as dashboard) ─────────────────────── */
+:root {
+  --bg:         #0A0A0F;
+  --surface:    #13131A;
+  --surface-el: #1A1A24;
+  --border:     rgba(255,255,255,0.08);
+  --border-h:   rgba(255,255,255,0.16);
+  --text-p:     #F4F4F6;
+  --text-s:     #8B8B96;
+  --text-t:     #5A5A66;
+  --accent:     #22D3EE;
+  --sev-low:    #4ADE80;
+  --sev-high:   #FB923C;
+  --sev-crit:   #F43F5E;
+  --radius:     12px;
+  --radius-sm:  8px;
+  font-family: 'Inter', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text-p);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* ── Header strip ───────────────────────────────────────────── */
+.header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 10px;
+  z-index: 100;
+}
+.header-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--text-s);
+}
+.header-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--text-t);
+  letter-spacing: 0.06em;
+}
+.header-badge.emergency {
+  color: var(--sev-crit);
+  border-color: rgba(244,63,94,0.35);
+  background: rgba(244,63,94,0.08);
+}
+
+/* ── Main card ──────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+/* ── Status section ─────────────────────────────────────────── */
+.status-section { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+
+.status-ring {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  transition: border-color 0.3s ease;
+}
+.status-ring.idle    { border-color: var(--border); }
+.status-ring.connecting { border-color: var(--sev-high); }
+.status-ring.connected  { border-color: var(--sev-low); }
+.status-ring.disconnected { border-color: var(--sev-crit); }
+
+/* Pulse ring behind status circle */
+.status-ring::before {
+  content: '';
+  position: absolute;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: none;
+}
+.status-ring.connected::before {
+  border-color: var(--sev-low);
+  animation: ringPulse 2s ease infinite;
+}
+.status-ring.connecting::before {
+  border-color: var(--sev-high);
+  animation: ringPulse 1s ease infinite;
+}
+@keyframes ringPulse {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+.status-icon {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.status-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-s);
+  letter-spacing: 0.02em;
+}
+.status-label.connected { color: var(--sev-low); }
+.status-label.connecting { color: var(--sev-high); }
+.status-label.disconnected { color: var(--sev-crit); }
+
+/* ── Call timer ─────────────────────────────────────────────── */
+.call-timer {
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-p);
+  letter-spacing: 0.04em;
+  display: none;
+}
+.call-timer.visible { display: block; }
+
+/* ── Agent status bar ───────────────────────────────────────── */
+.agent-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface-el);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-s);
+}
+.agent-bar.visible { display: flex; }
+.agent-bar.speaking { border-color: rgba(34,211,238,0.3); }
+.agent-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-t);
+  flex-shrink: 0;
+}
+.agent-bar.speaking .agent-dot {
+  background: var(--accent);
+  animation: agentPulse 0.8s ease infinite;
+}
+@keyframes agentPulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+/* ── Mic visualizer ─────────────────────────────────────────── */
+.mic-section {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.mic-section.visible { display: flex; }
+
+.mic-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 32px;
+}
+.mic-bar {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--border-h);
+  transition: height 0.1s ease, background 0.1s ease;
+  min-height: 4px;
+}
+.mic-bar.active { background: var(--accent); }
+
+.mic-label {
+  font-size: 11px;
+  color: var(--text-t);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mic-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--sev-crit);
+}
+.mic-dot.active { background: var(--sev-low); }
+
+/* ── Transcript ─────────────────────────────────────────────── */
+.transcript-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.transcript-wrap.visible { display: flex; }
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-thumb { background: var(--border-h); border-radius: 2px; }
+
+.tx-line {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.tx-line.user  { background: var(--surface); color: var(--text-p); align-self: flex-start; max-width: 85%; }
+.tx-line.agent { background: rgba(34,211,238,0.06); border: 1px solid rgba(34,211,238,0.15); color: var(--text-p); align-self: flex-end; max-width: 85%; text-align: right; }
+.tx-speaker { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-t); margin-bottom: 2px; }
+.tx-line.agent .tx-speaker { color: var(--accent); }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn-row { display: flex; gap: 10px; width: 100%; }
+
+.btn {
+  flex: 1;
+  padding: 13px 0;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid;
+  font-family: 'Inter', sans-serif;
+  transition: background 0.12s, border-color 0.12s, opacity 0.15s;
+  letter-spacing: 0.02em;
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-call {
+  background: rgba(74,222,128,0.12);
+  border-color: rgba(74,222,128,0.4);
+  color: var(--sev-low);
+}
+.btn-call:not(:disabled):hover { background: rgba(74,222,128,0.22); }
+
+.btn-end {
+  background: rgba(244,63,94,0.12);
+  border-color: rgba(244,63,94,0.4);
+  color: var(--sev-crit);
+  display: none;
+}
+.btn-end:not(:disabled):hover { background: rgba(244,63,94,0.22); }
+.btn-end.visible { display: block; }
+
+/* ── Info strip at bottom ───────────────────────────────────── */
+.info-strip {
+  font-size: 11px;
+  color: var(--text-t);
+  text-align: center;
+  line-height: 1.6;
+}
+.info-strip strong { color: var(--text-s); font-weight: 500; }
+
+/* ── Connecting spinner ─────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--sev-high);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: none;
+}
+.spinner.visible { display: block; }
+
+/* ── Emergency icon SVGs ────────────────────────────────────── */
+svg.icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <svg class="icon" style="width:16px;height:16px;color:var(--sev-crit)" viewBox="0 0 24 24">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 11.77 19.79 19.79 0 0 1 1.65 3.18 2 2 0 0 1 3.62 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.59a16 16 0 0 0 6 6l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16z"/>
+  </svg>
+  <span class="header-title">EMERGENCY TRIAGE SYSTEM</span>
+  <div style="flex:1"></div>
+  <span class="header-badge emergency">EMERGENCY LINE</span>
+  <span class="header-badge" style="margin-left:6px">112</span>
+</div>
+
+<!-- Main card -->
+<div class="card">
+
+  <!-- Status section -->
+  <div class="status-section">
+    <div class="status-ring idle" id="statusRing">
+      <!-- Idle: phone icon -->
+      <div class="status-icon" id="statusIcon">
+        <svg class="icon" style="color:var(--text-t)" viewBox="0 0 24 24">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 11.77 19.79 19.79 0 0 1 1.65 3.18 2 2 0 0 1 3.62 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.59a16 16 0 0 0 6 6l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16z"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="spinner" id="spinner"></div>
+
+    <span class="status-label" id="statusLabel">Ready to connect</span>
+    <div class="call-timer" id="callTimer">00:00</div>
+  </div>
+
+  <!-- Agent speaking indicator -->
+  <div class="agent-bar" id="agentBar">
+    <div class="agent-dot" id="agentDot"></div>
+    <span id="agentBarText">Agent standby</span>
+  </div>
+
+  <!-- Mic visualizer -->
+  <div class="mic-section" id="micSection">
+    <div class="mic-bars" id="micBars">
+      <!-- 8 bars, animated via JS -->
+    </div>
+    <div class="mic-label">
+      <div class="mic-dot" id="micDot"></div>
+      <span id="micLabel">Microphone off</span>
+    </div>
+  </div>
+
+  <!-- Transcript -->
+  <div class="transcript-wrap" id="transcriptWrap"></div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button class="btn btn-call" id="callBtn">
+      Call Emergency Agent
+    </button>
+    <button class="btn btn-end visible" id="endBtn" style="display:none">
+      End Call
+    </button>
+  </div>
+
+  <!-- Info -->
+  <div class="info-strip">
+    <strong>Speak clearly in Hindi or English.</strong><br/>
+    This line is monitored. All calls are recorded for emergency dispatch.
+  </div>
+
+</div>
+
+<script>
+// ── DOM refs ─────────────────────────────────────────────────
+const statusRing   = document.getElementById('statusRing');
+const statusIcon   = document.getElementById('statusIcon');
+const statusLabel  = document.getElementById('statusLabel');
+const spinner      = document.getElementById('spinner');
+const callTimer    = document.getElementById('callTimer');
+const agentBar     = document.getElementById('agentBar');
+const agentDot     = document.getElementById('agentDot');
+const agentBarText = document.getElementById('agentBarText');
+const micSection   = document.getElementById('micSection');
+const micBars      = document.getElementById('micBars');
+const micDot       = document.getElementById('micDot');
+const micLabel     = document.getElementById('micLabel');
+const transcriptWrap = document.getElementById('transcriptWrap');
+const callBtn      = document.getElementById('callBtn');
+const endBtn       = document.getElementById('endBtn');
+
+// ── State ────────────────────────────────────────────────────
+let room           = null;
+let timerInterval  = null;
+let micAnalyser    = null;
+let micAnimFrame   = null;
+let callStart      = null;
+let audioCtx       = null;
+
+// ── Build mic bars ───────────────────────────────────────────
+const BAR_COUNT = 9;
+for (let i = 0; i < BAR_COUNT; i++) {
+  const b = document.createElement('div');
+  b.className = 'mic-bar';
+  micBars.appendChild(b);
+}
+const bars = micBars.querySelectorAll('.mic-bar');
+
+// ── Helpers ──────────────────────────────────────────────────
+function pad2(n) { return String(n).padStart(2,'0'); }
+
+function setStatus(state, label) {
+  statusRing.className = `status-ring ${state}`;
+  statusLabel.className = `status-label ${state}`;
+  statusLabel.textContent = label;
+}
+
+function setConnecting() {
+  setStatus('connecting', 'Connecting…');
+  spinner.classList.add('visible');
+  callBtn.disabled = true;
+  statusIcon.innerHTML = '';
+}
+
+function setConnected() {
+  setStatus('connected', 'Connected — speak now');
+  spinner.classList.remove('visible');
+  statusIcon.innerHTML = `
+    <svg class="icon" style="color:var(--sev-low)" viewBox="0 0 24 24">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 11.77 19.79 19.79 0 0 1 1.65 3.18 2 2 0 0 1 3.62 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.59a16 16 0 0 0 6 6l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 16z"/>
+    </svg>`;
+  callBtn.style.display = 'none';
+  endBtn.style.display  = 'block';
+  callTimer.classList.add('visible');
+  agentBar.classList.add('visible');
+  micSection.classList.add('visible');
+  transcriptWrap.classList.add('visible');
+
+  // Start timer
+  callStart = Date.now();
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - callStart) / 1000);
+    callTimer.textContent = `${pad2(Math.floor(s/60))}:${pad2(s%60)}`;
+  }, 1000);
+}
+
+function setDisconnected() {
+  setStatus('disconnected', 'Call ended');
+  spinner.classList.remove('visible');
+  statusIcon.innerHTML = `
+    <svg class="icon" style="color:var(--sev-crit)" viewBox="0 0 24 24">
+      <line x1="1" y1="1" x2="23" y2="23"/>
+      <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55a1 1 0 0 1 0 1.41l-3 3a1 1 0 0 1-1.41 0c-3.07-3.07-4.61-6.51-4.7-10.04M5.1 5.1A10.83 10.83 0 0 0 3 9a1 1 0 0 0 .29.71l3 3a1 1 0 0 0 1.41 0"/>
+    </svg>`;
+  callBtn.disabled = false;
+  callBtn.style.display = 'block';
+  endBtn.style.display  = 'none';
+  agentBar.classList.remove('visible');
+  micSection.classList.remove('visible');
+  clearInterval(timerInterval);
+  stopMicVisualizer();
+}
+
+// ── Mic visualizer ───────────────────────────────────────────
+async function startMicVisualizer(stream) {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 64;
+    source.connect(micAnalyser);
+    micDot.classList.add('active');
+    micLabel.textContent = 'Microphone active';
+
+    const data = new Uint8Array(micAnalyser.frequencyBinCount);
+    function draw() {
+      micAnimFrame = requestAnimationFrame(draw);
+      micAnalyser.getByteFrequencyData(data);
+      bars.forEach((bar, i) => {
+        const v = data[i] || 0;
+        const h = Math.max(4, (v / 255) * 32);
+        bar.style.height = `${h}px`;
+        bar.classList.toggle('active', v > 20);
+      });
+    }
+    draw();
+  } catch(e) {
+    console.warn('Mic visualizer failed:', e);
+  }
+}
+
+function stopMicVisualizer() {
+  if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
+  if (audioCtx) audioCtx.close().catch(()=>{});
+  bars.forEach(b => { b.style.height = '4px'; b.classList.remove('active'); });
+  micDot.classList.remove('active');
+  micLabel.textContent = 'Microphone off';
+}
+
+// ── Transcript ───────────────────────────────────────────────
+function addTranscriptLine(speaker, text) {
+  const line = document.createElement('div');
+  line.className = `tx-line ${speaker}`;
+  line.innerHTML = `<div class="tx-speaker">${speaker}</div>${text}`;
+  transcriptWrap.appendChild(line);
+  transcriptWrap.scrollTop = transcriptWrap.scrollHeight;
+}
+
+// ── Agent speaking detection ─────────────────────────────────
+function onAgentTrack(track) {
+  if (track.kind !== 'audio') return;
+  const el = track.attach();
+  el.style.display = 'none';
+  document.body.appendChild(el);
+
+  // Detect agent speaking via volume
+  try {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src   = actx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+    const an    = actx.createAnalyser();
+    an.fftSize  = 64;
+    src.connect(an);
+    const dat   = new Uint8Array(an.frequencyBinCount);
+
+    let speaking = false;
+    function check() {
+      requestAnimationFrame(check);
+      an.getByteFrequencyData(dat);
+      const avg = dat.reduce((a,b) => a+b, 0) / dat.length;
+      const nowSpeaking = avg > 12;
+      if (nowSpeaking !== speaking) {
+        speaking = nowSpeaking;
+        agentBar.classList.toggle('speaking', speaking);
+        agentDot.classList.toggle('active', speaking);
+        agentBarText.textContent = speaking ? 'Agent is speaking…' : 'Agent standby';
+      }
+    }
+    check();
+  } catch(e) {}
+}
+
+// ── Connect ──────────────────────────────────────────────────
+callBtn.addEventListener('click', async () => {
+  setConnecting();
+  try {
+    const res  = await fetch('/token');
+    const data = await res.json();
+
+    room = new LivekitClient.Room({
+      adaptiveStream: true,
+      dynacast: true,
+    });
+
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      onAgentTrack(track);
+    });
+
+    room.on(LivekitClient.RoomEvent.Disconnected, () => {
+      setDisconnected();
+    });
+
+    room.on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+      agentBarText.textContent = 'Agent connected';
+    });
+
+    await room.connect(data.url, data.token);
+    setConnected();
+
+    // Enable mic and wire visualizer
+    await room.localParticipant.setMicrophoneEnabled(true);
+    const micTrack = room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+    if (micTrack?.track?.mediaStream) {
+      await startMicVisualizer(micTrack.track.mediaStream);
+    } else {
+      // Fallback: get raw mic stream for visualizer
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        await startMicVisualizer(stream);
+      } catch(e) {}
+    }
+
+  } catch(e) {
+    console.error(e);
+    setDisconnected();
+    statusLabel.textContent = 'Connection failed: ' + e.message;
+  }
+});
+
+// ── Disconnect ───────────────────────────────────────────────
+endBtn.addEventListener('click', async () => {
+  if (room) {
+    await room.disconnect();
+    room = null;
+  }
+  setDisconnected();
+  addTranscriptLine('system', 'Call ended. Thank you.');
+});
+</script>
+</body>
+</html>

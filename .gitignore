@@ -1,0 +1,13 @@
+.env
+.en
+.venv/
+__pycache__/
+pycache/
+*.pyc
+triage.db
+triage.db-*
+recordings/
+*.log
+.system_generated/
+test_audio.wav
+.DS_Store

@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+pydantic-settings
+sqlalchemy
+websockets
+openai
+google-genai
+livekit-agents
+sarvam
+python-multipart
+httpx
+aiosqlite
+livekit-plugins-deepgram
+livekit

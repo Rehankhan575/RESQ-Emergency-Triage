@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Emergency Triage — Control Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  /* ── Design tokens ────────────────────────────────────────────── */
+  :root {
+    --bg:          #0A0A0F;
+    --surface:     #13131A;
+    --surface-el:  #1A1A24;
+    --border:      rgba(255,255,255,0.08);
+    --border-h:    rgba(255,255,255,0.16);
+    --text-p:      #F4F4F6;
+    --text-s:      #8B8B96;
+    --text-t:      #5A5A66;
+    --accent:      #22D3EE;
+    --sev-low:     #4ADE80;
+    --sev-med:     #FACC15;
+    --sev-high:    #FB923C;
+    --sev-crit:    #F43F5E;
+    --radius-card: 12px;
+    --radius-sm:   8px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-p);
+    background: var(--bg);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); height: 100vh; overflow: hidden; }
+
+  /* ── Toast Notifications ───────────────────────────────────────── */
+  #toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
+  }
+  .toast {
+    background: var(--surface-el);
+    border: 1px solid var(--sev-crit);
+    border-left: 4px solid var(--sev-crit);
+    color: var(--text-p);
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    opacity: 0;
+    transform: translateY(20px);
+    animation: toast-in 0.3s forwards ease-out;
+  }
+  .toast.fade-out {
+    animation: toast-out 0.3s forwards ease-in;
+  }
+  @keyframes toast-in {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes toast-out {
+    to { opacity: 0; transform: translateY(10px); }
+  }
+
+  /* ── Scrollbars ────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-h); border-radius: 2px; }
+
+  /* ── Grid Layout ──────────────────────────────────────────────── */
+  .layout {
+    display: grid;
+    grid-template-rows: 48px 56px 1fr;
+    grid-template-columns: 280px 1fr 320px;
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Header ────────────────────────────────────────────────────── */
+  .header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .header-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-p);
+    font-variant-numeric: tabular-nums;
+  }
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--sev-low);
+  }
+  .live-dot.pulse { animation: livePulse 2s ease infinite; }
+  @keyframes livePulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+
+  /* ── Analytics strip ──────────────────────────────────────────── */
+  .analytics-strip {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .stat-block {
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px 0 0;
+    margin-right: 24px;
+    border-right: 1px solid var(--border);
+  }
+  .stat-block:last-child { border-right: none; }
+  .stat-label { font-size: 10px; color: var(--text-t); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .stat-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-p); line-height: 1.2; }
+  .sev-strip { display: flex; gap: 6px; align-items: center; }
+
+  /* ── Cards / Panels ───────────────────────────────────────────── */
+  .panel {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-t);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .panel-body { overflow-y: auto; flex: 1; }
+
+  /* ── Left: call queue ─────────────────────────────────────────── */
+  .call-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.12s;
+    position: relative;
+  }
+  .call-row:hover { background: var(--surface-el); }
+  .call-row.selected { background: var(--surface-el); border-left: 2px solid var(--accent); }
+  .sev-bar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+  }
+  .call-info { flex: 1; min-width: 0; padding-left: 6px; }
+  .call-loc { font-size: 12px; font-weight: 500; color: var(--text-p); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .call-meta { font-size: 11px; color: var(--text-s); margin-top: 2px; }
+
+  /* ── Grouped Calls ────────────────────────────────────────────── */
+  .call-group { border-bottom: 1px solid var(--border); }
+  .call-group-header {
+    display: flex; align-items: center; padding: 10px 14px; gap: 10px;
+    cursor: pointer; transition: background 0.12s; position: relative;
+  }
+  .call-group-header:hover { background: var(--surface-el); }
+  .call-group-body { display: none; background: rgba(0,0,0,0.2); }
+  .call-group-body.expanded { display: block; }
+  .call-group-body .call-row { border-bottom: none; border-top: 1px solid rgba(255,255,255,0.04); padding-left: 24px; }
+  .call-group-body .call-row .sev-bar { display: none; }
+  .chevron { width: 14px; height: 14px; fill: none; stroke: var(--text-t); stroke-width: 2; transition: transform 0.2s; }
+  .chevron.expanded { transform: rotate(90deg); }
+
+  /* ── Center column ────────────────────────────────────────────── */
+  .center-col {
+    grid-row: 3;
+    grid-column: 2;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  /* ── Triage state panel ───────────────────────────────────────── */
+  .triage-panel {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .triage-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .triage-kv { display: flex; flex-direction: column; gap: 3px; }
+  .kv-label { font-size: 10px; font-weight: 500; color: var(--text-t); text-transform: uppercase; letter-spacing: 0.06em; }
+  .kv-value { font-size: 13px; font-weight: 500; color: var(--text-p); }
+  .kv-null { color: var(--text-t); font-style: italic; }
+
+  /* ── Badges ───────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.04em;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    color: var(--text-s);
+  }
+  .badge.low    { color: var(--sev-low);  background: rgba(74,222,128,0.10); border-color: rgba(74,222,128,0.25); }
+  .badge.medium { color: var(--sev-med);  background: rgba(250,204,21,0.10); border-color: rgba(250,204,21,0.25); }
+  .badge.high   { color: var(--sev-high); background: rgba(251,146,60,0.10); border-color: rgba(251,146,60,0.25); }
+  .badge.critical { color: var(--sev-crit); background: rgba(244,63,94,0.10); border-color: rgba(244,63,94,0.35); }
+  .badge.calm     { color: var(--sev-low);  background: rgba(74,222,128,0.08); border-color: rgba(74,222,128,0.20); }
+  .badge.anxious  { color: var(--sev-med);  background: rgba(250,204,21,0.08); border-color: rgba(250,204,21,0.20); }
+  .badge.panicking { color: var(--sev-crit); background: rgba(244,63,94,0.10); border-color: rgba(244,63,94,0.30); }
+
+  /* ── Transcript ───────────────────────────────────────────────── */
+  .transcript-wrap { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); }
+  .tx-msg { display: flex; flex-direction: column; max-width: 72%; gap: 2px; }
+  .tx-msg.user { align-self: flex-start; }
+  .tx-msg.agent { align-self: flex-end; }
+  .tx-msg.operator { align-self: flex-start; }
+  .tx-speaker { font-size: 10px; font-weight: 500; color: var(--text-t); letter-spacing: 0.04em; text-transform: uppercase; }
+  .tx-msg.agent .tx-speaker { text-align: right; color: var(--accent); }
+  .tx-msg.operator .tx-speaker { color: var(--sev-high); }
+  .tx-bubble {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.5;
+    border: 1px solid var(--border);
+  }
+  .tx-msg.user .tx-bubble   { background: var(--surface); color: var(--text-p); }
+  .tx-msg.agent .tx-bubble  { background: rgba(34,211,238,0.06); border-color: rgba(34,211,238,0.18); color: var(--text-p); }
+  .tx-msg.operator .tx-bubble { background: rgba(251,146,60,0.07); border-color: rgba(251,146,60,0.25); color: var(--text-p); }
+  .tx-preview { font-size: 11px; color: var(--text-t); font-style: italic; padding: 4px 10px; opacity: 0.7; align-self: flex-end; }
+
+  /* ── Inject box ───────────────────────────────────────────────── */
+  .inject-bar {
+    display: flex; gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .inject-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    font-size: 12px;
+    color: var(--text-p);
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.15s;
+  }
+  .inject-input:focus { border-color: var(--border-h); }
+  .inject-input::placeholder { color: var(--text-t); }
+  .btn {
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid;
+    font-family: 'Inter', sans-serif;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .btn-send {
+    background: rgba(34,211,238,0.12);
+    border-color: rgba(34,211,238,0.3);
+    color: var(--accent);
+  }
+  .btn-send:hover { background: rgba(34,211,238,0.2); }
+  .btn-takeover {
+    background: rgba(244,63,94,0.14);
+    border-color: rgba(244,63,94,0.4);
+    color: var(--sev-crit);
+    font-size: 11px;
+    padding: 5px 12px;
+  }
+  .btn-takeover:hover { background: rgba(244,63,94,0.25); }
+  .btn-sim {
+    background: rgba(251,146,60,0.1);
+    border-color: rgba(251,146,60,0.3);
+    color: var(--sev-high);
+    font-size: 10px;
+    padding: 3px 10px;
+  }
+  .btn-sim:hover { background: rgba(251,146,60,0.2); }
+
+  /* ── Right panel ──────────────────────────────────────────────── */
+  .right-col {
+    grid-row: 3;
+    grid-column: 3;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .right-top { flex: 1; min-height: 0; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
+  .right-bottom { height: 260px; flex-shrink: 0; }
+
+  /* ── Confidence gauge ─────────────────────────────────────────── */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 16px 0 10px; gap: 6px; }
+  .gauge-svg { width: 90px; height: 90px; }
+  .gauge-track { fill: none; stroke: var(--border-h); stroke-width: 7; }
+  .gauge-fill  { fill: none; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease; transform-origin: 50% 50%; transform: rotate(-90deg); }
+  .gauge-val   { font-size: 16px; font-weight: 600; fill: var(--text-p); }
+  .gauge-sub   { font-size: 9px; fill: var(--text-t); }
+  @keyframes gaugePulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .gauge-fill.pulse-crit { animation: gaugePulse 1.2s ease infinite; }
+
+  /* ── Flag badge ───────────────────────────────────────────────── */
+  .flag-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 500;
+    padding: 5px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    color: var(--text-t);
+    margin: 0 14px 10px;
+    background: var(--bg);
+  }
+  .flag-indicator.flagged {
+    color: var(--sev-crit);
+    border-color: rgba(244,63,94,0.4);
+    background: rgba(244,63,94,0.06);
+  }
+  .flag-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── Reasoning box ────────────────────────────────────────────── */
+  .reasoning-box {
+    margin: 0 14px 12px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--text-t);
+  }
+  .reasoning-box .reasoning-label {
+    display: block;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-s);
+    margin-bottom: 3px;
+  }
+  .reasoning-box.is-form {
+    border-color: rgba(148,163,184,0.2);
+    background: rgba(148,163,184,0.04);
+  }
+  .reasoning-box.is-form .reasoning-label {
+    color: var(--text-s);
+  }
+  .reasoning-box .reasoning-text {
+    font-style: italic;
+  }
+
+  /* ── Audio player ─────────────────────────────────────────────── */
+  .audio-player {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .audio-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border-h);
+    background: var(--surface-el);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background 0.12s;
+  }
+  .audio-btn:hover { background: rgba(255,255,255,0.12); }
+  .audio-scrubber {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border-h);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .audio-scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .audio-time { font-size: 10px; color: var(--text-t); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── Timer ────────────────────────────────────────────────────── */
+  .call-timer { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; }
+
+  /* ── Map ──────────────────────────────────────────────────────── */
+  #map { width: 100%; height: 100%; }
+  .leaflet-container { background: #1a1a2e !important; }
+
+  /* ── Critical banner ──────────────────────────────────────────── */
+  .crit-banner {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    background: var(--sev-crit);
+    color: #fff;
+    font-size: 12px; font-weight: 600;
+    padding: 6px 20px;
+    text-align: center;
+    letter-spacing: 0.05em;
+    animation: critBanner 0.4s ease;
+  }
+  @keyframes critBanner { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+  .crit-banner.visible { display: block; }
+
+  /* ── Queue critical glow ──────────────────────────────────────── */
+  .call-row.crit-glow { animation: critRowGlow 1.5s ease infinite; }
+  @keyframes critRowGlow { 0%,100% { background: var(--surface-el); } 50% { background: rgba(244,63,94,0.12); } }
+
+  /* ── Inline SVG icons ─────────────────────────────────────────── */
+  .icon { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- ── Critical banner ── -->
+<div class="crit-banner" id="critBanner">
+  ⬤  CRITICAL EMERGENCY INCOMING — dev-room-003 — Nashik, Maharashtra
+</div>
+
+<!-- ── Layout root ── -->
+<div class="layout">
+
+  <!-- ═══════════════ HEADER ═══════════════ -->
+  <header class="header">
+    <div class="live-dot pulse" id="statusDot"></div>
+    <span class="header-title">EMERGENCY TRIAGE</span>
+    <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
+    <span class="badge" style="font-size:10px;letter-spacing:0.06em">CONNECTED</span>
+    <span class="badge" style="font-size:10px;letter-spacing:0.06em;margin-left:4px">HI-IN / EN-IN</span>
+    <div style="flex:1"></div>
+    <button class="btn btn-sim" onclick="simulateCritical()">Simulate Critical</button>
+    <span style="font-size:11px;color:var(--text-t);margin-left:16px;font-variant-numeric:tabular-nums" id="wallclock"></span>
+  </header>
+
+  <!-- ═══════════════ ANALYTICS STRIP ═══════════════ -->
+  <div class="analytics-strip">
+    <div class="stat-block">
+      <span class="stat-label">Total Calls</span>
+      <span class="stat-value" id="statTotal">3</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Active</span>
+      <span class="stat-value" style="color:var(--sev-low)" id="statActive">2</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Avg Latency</span>
+      <span class="stat-value" id="statLatency">1.4s</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Escalation Rate</span>
+      <span class="stat-value" id="statEsc">33%</span>
+    </div>
+    <div class="stat-block" style="border-right:none">
+      <span class="stat-label">Severity Breakdown</span>
+      <div class="sev-strip" style="margin-top:4px">
+        <span class="badge low">Low 0</span>
+        <span class="badge medium">Med 1</span>
+        <span class="badge high">High 1</span>
+        <span class="badge critical">Crit 1</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ LEFT: CALL QUEUE ═══════════════ -->
+  <div class="panel" style="grid-row:3;grid-column:1">
+    <div class="panel-header">
+      Call Queue
+      <span style="color:var(--accent);font-variant-numeric:tabular-nums">3 live</span>
+    </div>
+    <div class="panel-body" id="callQueue"></div>
+  </div>
+
+  <!-- ═══════════════ CENTER COLUMN ═══════════════ -->
+  <div class="center-col">
+    <!-- Triage state -->
+    <div class="triage-panel" id="triagePanel">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">
+        <span style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-t)">Triage State</span>
+        <span class="call-timer" id="callTimer">00:00</span>
+        <div style="flex:1"></div>
+        <button class="btn btn-takeover" onclick="handleTakeover()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          Human Takeover
+        </button>
+      </div>
+      <div style="font-size:12px;color:var(--text-s);margin-bottom:10px" id="selectedSessionLabel">Session: —</div>
+      <div class="triage-grid" id="triageGrid">
+        <div class="triage-kv"><span class="kv-label">Location</span><span class="kv-value kv-null" id="tv-location">—</span></div>
+        <div class="triage-kv"><span class="kv-label">Emergency Type</span><span class="kv-value kv-null" id="tv-type">—</span></div>
+        <div class="triage-kv"><span class="kv-label">People Affected</span><span class="kv-value kv-null" id="tv-people">—</span></div>
+        <div class="triage-kv"><span class="kv-label">Injuries</span><span class="kv-value kv-null" id="tv-injuries">—</span></div>
+        <div class="triage-kv">
+          <span class="kv-label">Severity</span>
+          <span id="tv-severity" class="badge" style="margin-top:2px;width:fit-content">—</span>
+        </div>
+        <div class="triage-kv">
+          <span class="kv-label">Stress Level</span>
+          <span id="tv-stress" class="badge" style="margin-top:2px;width:fit-content">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transcript -->
+    <div class="transcript-wrap" id="transcriptWrap"></div>
+
+    <!-- Human injection bar -->
+    <div class="inject-bar">
+      <svg class="icon" style="color:var(--sev-high)" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <input class="inject-input" id="injectInput" placeholder="Operator injection — type a message and press Enter…" onkeydown="if(event.key==='Enter')sendOperatorMsg()"/>
+      <button class="btn btn-send" onclick="sendOperatorMsg()">Send</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RIGHT COLUMN ═══════════════ -->
+  <div class="right-col">
+    <!-- Confidence / Flag -->
+    <div class="right-top">
+      <div class="panel-header">Confidence & Flag</div>
+      <div class="gauge-wrap">
+        <svg class="gauge-svg" viewBox="0 0 90 90" id="gaugeEl">
+          <circle class="gauge-track" cx="45" cy="45" r="36"/>
+          <circle class="gauge-fill" cx="45" cy="45" r="36" id="gaugeFill"
+            stroke="#22D3EE"
+            stroke-dasharray="226.2"
+            stroke-dashoffset="56.55"/>
+          <text class="gauge-val" x="45" y="47" text-anchor="middle" dominant-baseline="middle" id="gaugeVal">75%</text>
+          <text class="gauge-sub" x="45" y="58" text-anchor="middle" id="gaugeSub">confidence</text>
+        </svg>
+      </div>
+      <div class="flag-indicator" id="flagIndicator">
+        <span class="flag-dot"></span>
+        <span id="flagLabel">Agent handling</span>
+      </div>
+      <!-- Reasoning box -->
+      <div class="reasoning-box" id="reasoningBox" style="display:none">
+        <span class="reasoning-label" id="reasoningLabel">AI Reasoning</span>
+        <span class="reasoning-text" id="reasoningText"></span>
+      </div>
+      <!-- Audio player -->
+      <div class="audio-player">
+        <div class="audio-btn" onclick="toggleAudio(this)">
+          <svg id="audioIcon" class="icon" style="width:12px;height:12px;margin-left:1px" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <input type="range" class="audio-scrubber" min="0" max="30" value="0" id="audioScrubber"/>
+        <span class="audio-time"><span id="audioPos">0:00</span> / 0:30</span>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div class="right-bottom" style="position:relative">
+      <div class="panel-header" style="position:absolute;top:0;left:0;right:0;z-index:1000">
+        Incident Map
+      </div>
+      <div id="map" style="padding-top:32px;height:100%;background:var(--surface)"></div>
+    </div>
+  </div>
+
+</div><!-- /layout -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// LIVE DATA LAYER — WebSocket + backend API
+// All mock data removed; state is now fed from ws://localhost:8000/ws/dashboard
+// ═══════════════════════════════════════════════════════════════
+
+// ── Runtime state ─────────────────────────────────────────────
+const calls   = {};          // session_id -> call object
+let selectedId      = null;
+let audioPlaying    = false;
+let audioInterval   = null;
+let timerInterval   = null;
+let audioUnlocked   = false;
+
+// ── WebSocket reconnect ────────────────────────────────────────
+let ws             = null;
+let wsRetryDelay   = 1000;   // ms, doubles on each failure, capped at 15 s
+const WS_URL       = 'ws://localhost:8000/ws/dashboard';
+
+// ── Leaflet map ────────────────────────────────────────────────
+let leafletMap     = null;
+const mapMarkers   = {};     // session_id -> L.Marker
+const geocodeCache = {};     // location string -> {lat,lon}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO UNLOCK PROMPT
+// Browser blocks AudioContext until a user gesture. Show a
+// one-time overlay so the beep permission is granted early.
+// ═══════════════════════════════════════════════════════════════
+function showAudioPrompt() {
+  const el = document.createElement('div');
+  el.id = 'audioPrompt';
+  el.style.cssText = `
+    position:fixed;bottom:16px;right:16px;z-index:99999;
+    background:#1A1A24;border:1px solid rgba(34,211,238,0.3);
+    border-radius:8px;padding:10px 14px;font-size:11px;
+    color:#8B8B96;display:flex;align-items:center;gap:8px;cursor:pointer;`;
+  el.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="1.8" stroke-linecap="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+    </svg>
+    <span>Click to enable audio alerts</span>`;
+  el.onclick = () => {
+    audioUnlocked = true;
+    el.remove();
+  };
+  document.body.appendChild(el);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONNECTION STATUS DOT
+// ═══════════════════════════════════════════════════════════════
+function setStatus(state) {  // 'connected' | 'reconnecting' | 'disconnected'
+  const dot   = document.getElementById('statusDot');
+  const badge = document.querySelector('.badge[style*="CONNECTED"]') ||
+                document.querySelector('.header .badge');
+  const colors = { connected:'var(--sev-low)', reconnecting:'var(--sev-med)', disconnected:'var(--sev-crit)' };
+  dot.style.background = colors[state] || 'var(--text-t)';
+  dot.className = state === 'connected' ? 'live-dot pulse' : 'live-dot';
+  if (badge) badge.textContent = state.toUpperCase();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const SEV_WEIGHT = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+function sevClass(s) { return s ? s.toLowerCase() : ''; }
+function relTime(ts) {
+  const d = Math.floor((Date.now() - ts) / 1000);
+  if (d < 60) return `${d}s ago`;
+  if (d < 3600) return `${Math.floor(d/60)}m ago`;
+  return `${Math.floor(d/3600)}h ago`;
+}
+function fmt(v) {
+  if (v === null || v === undefined) return '—';
+  if (v === true) return 'Yes';
+  if (v === false) return 'No';
+  return String(v);
+}
+function pad2(n) { return String(n).padStart(2,'0'); }
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS STRIP
+// ═══════════════════════════════════════════════════════════════
+function updateAnalytics() {
+  const all = Object.values(calls);
+  document.getElementById('statTotal').textContent  = all.length;
+  document.getElementById('statActive').textContent = all.filter(c => !c.is_complete).length;
+
+  const sevCounts = { LOW:0, MEDIUM:0, HIGH:0, CRITICAL:0 };
+  const esc = all.filter(c => c.triage_state?.flag_for_human).length;
+  all.forEach(c => { const s = c.triage_state?.severity; if (s && sevCounts[s] !== undefined) sevCounts[s]++; });
+
+  document.getElementById('statEsc').textContent =
+    all.length ? `${Math.round((esc/all.length)*100)}%` : '0%';
+
+  // Update severity badges in the strip
+  const strip = document.querySelector('.sev-strip');
+  if (strip) {
+    strip.innerHTML =
+      `<span class="badge low">Low ${sevCounts.LOW}</span>` +
+      `<span class="badge medium">Med ${sevCounts.MEDIUM}</span>` +
+      `<span class="badge high">High ${sevCounts.HIGH}</span>` +
+      `<span class="badge critical">Crit ${sevCounts.CRITICAL}</span>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CLUSTERING LOGIC
+// ═══════════════════════════════════════════════════════════════
+function buildIncidentsMap(callsData) {
+  const incidents = {};
+  Object.values(callsData).forEach(c => {
+    const ts = c.triage_state || {};
+    const iid = c.incident_id || ts.incident_id || `unclustered-${c.session_id}`; // Fallback to session_id if unclustered
+    if (!incidents[iid]) {
+      incidents[iid] = {
+        id: iid,
+        calls: [],
+        maxSeverity: null,
+        maxSeverityWeight: 9,
+        location: ts.location || 'Unknown location',
+        emergencyType: ts.emergency_type || 'Unknown Type'
+      };
+    }
+    incidents[iid].calls.push(c);
+    const weight = SEV_WEIGHT[ts.severity] ?? 9;
+    if (weight < incidents[iid].maxSeverityWeight) {
+      incidents[iid].maxSeverity = ts.severity;
+      incidents[iid].maxSeverityWeight = weight;
+    }
+  });
+  return incidents;
+}
+
+function toggleGroup(id) {
+  const body = document.getElementById(`group-body-${id}`);
+  const chevron = document.getElementById(`chevron-${id}`);
+  if (body) body.classList.toggle('expanded');
+  if (chevron) chevron.classList.toggle('expanded');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CALL QUEUE
+// ═══════════════════════════════════════════════════════════════
+function renderQueue() {
+  const queue = document.getElementById('callQueue');
+  
+  const incidents = buildIncidentsMap(calls);
+  
+  // Calculate urgency for each incident
+  const now = Date.now();
+  Object.values(incidents).forEach(incident => {
+    // Determine the most recent server_updated_at in this cluster
+    let latestServerUpdate = 0;
+    let maxBaseUrgency = 0;
+    let baseBreakdown = "";
+    
+    incident.calls.forEach(c => {
+      if (c.server_updated_at && c.server_updated_at > latestServerUpdate) {
+        latestServerUpdate = c.server_updated_at;
+      }
+      const ubs = c.triage_state?.urgency_base_score || 60;
+      if (ubs > maxBaseUrgency) {
+        maxBaseUrgency = ubs;
+        baseBreakdown = c.triage_state?.urgency_breakdown_base || "UNKNOWN";
+      }
+    });
+    
+    // If somehow missing, fallback to now
+    if (!latestServerUpdate) latestServerUpdate = now;
+    
+    const staleMinutes = Math.floor((now - latestServerUpdate) / 60000);
+    const stalenessBoost = Math.min(20, Math.max(0, staleMinutes));
+    
+    incident.totalUrgency = maxBaseUrgency + stalenessBoost;
+    incident.lastUpdate = latestServerUpdate;
+    
+    // Breakdown for tooltip/badge
+    incident.urgencyBadge = `Score: ${incident.totalUrgency} (${baseBreakdown}${stalenessBoost > 0 ? ` + ${stalenessBoost}m stale` : ''})`;
+  });
+
+  const sortedIncidents = Object.values(incidents)
+    .sort((a, b) => {
+      if (b.totalUrgency !== a.totalUrgency) return b.totalUrgency - a.totalUrgency;
+      return b.lastUpdate - a.lastUpdate;
+    });
+
+  sortedIncidents.forEach(incident => {
+    const hasSelected = incident.calls.some(c => c.session_id === selectedId);
+    const sortedCalls = incident.calls.sort((a,b) => (b.started_at||0) - (a.started_at||0));
+    const isCrit = incident.maxSeverity === 'CRITICAL' && incident.calls.some(c => !c.is_complete);
+
+    if (incident.calls.length === 1) {
+      const call = sortedCalls[0];
+      const ts = call.triage_state || {};
+      let row = document.getElementById(`row-${call.session_id}`);
+      
+      const sevColor = { LOW:'var(--sev-low)', MEDIUM:'var(--sev-med)', HIGH:'var(--sev-high)', CRITICAL:'var(--sev-crit)' }[ts.severity] || 'var(--text-t)';
+      const isSilent = call.channel === 'silent_form';
+      const iconSvg = isSilent 
+        ? `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>`
+        : `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
+
+      if (!row) {
+        row = document.createElement('div');
+        row.id = `row-${call.session_id}`;
+        row.dataset.id = call.session_id;
+        row.onclick = () => selectCall(call.session_id);
+      }
+      row.className = `call-row${call.session_id === selectedId ? ' selected' : ''}${isCrit ? ' crit-glow' : ''}`;
+      const baseBreakdown = c.triage_state?.urgency_breakdown_base || c.triage_state?.severity || 'UNKNOWN';
+      const stl = staleness > 0 ? ` + ${staleness}m stale` : '';
+      const scoreStr = `Score: ${totalScore} (${baseBreakdown}${stl})`;
+      row.innerHTML = `
+        <div class="sev-bar" style="background:${sevColor}"></div>
+        <div class="call-info">
+          <div class="call-loc">${ts.location || 'Unknown location'}</div>
+          <div class="call-meta">${relTime(call.server_updated_at || call.started_at || Date.now())} &bull; ${call.session_id} <span style="color:var(--text-m);font-style:italic"> — ${scoreStr}</span></div>
+        </div>
+        ${isSilent 
+          ? `<span class="badge" style="background:rgba(255,255,255,0.1); color:var(--text-m);">${iconSvg} SILENT</span>` 
+          : `<span class="badge ${sevClass(ts.severity)}">${iconSvg} ${ts.severity || '?'}</span>`}
+      `;
+      queue.appendChild(row);
+    } else {
+      let groupDiv = document.getElementById(`group-${incident.id}`);
+      if (!groupDiv) {
+        groupDiv = document.createElement('div');
+        groupDiv.id = `group-${incident.id}`;
+      }
+      groupDiv.className = 'call-group';
+      
+      const sevColor = { LOW:'var(--sev-low)', MEDIUM:'var(--sev-med)', HIGH:'var(--sev-high)', CRITICAL:'var(--sev-crit)' }[incident.maxSeverity] || 'var(--text-t)';
+      const voiceCount = incident.calls.filter(c => c.channel !== 'silent_form').length;
+      const silentCount = incident.calls.filter(c => c.channel === 'silent_form').length;
+      let countText = [];
+      if (voiceCount > 0) countText.push(`${voiceCount} caller${voiceCount > 1 ? 's' : ''}`);
+      if (silentCount > 0) countText.push(`${silentCount} report${silentCount > 1 ? 's' : ''}`);
+      const countLabel = countText.join(', ');
+
+      let header = document.getElementById(`group-header-${incident.id}`);
+      if (!header) {
+        header = document.createElement('div');
+        header.id = `group-header-${incident.id}`;
+        header.onclick = () => toggleGroup(incident.id);
+      }
+      header.className = `call-group-header${isCrit ? ' crit-glow' : ''}`;
+      
+      const isExpanded = document.getElementById(`group-body-${incident.id}`)?.classList.contains('expanded') || hasSelected;
+      
+      header.innerHTML = `
+        <div class="sev-bar" style="background:${sevColor}"></div>
+        <svg id="chevron-${incident.id}" class="chevron${isExpanded ? ' expanded' : ''}" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        <div class="call-info">
+          <div class="call-loc">${incident.emergencyType} — ${incident.location}</div>
+          <div class="call-meta" style="color:var(--accent)">${countLabel} <span style="color:var(--text-m);font-style:italic"> — ${incident.urgencyBadge}</span></div>
+        </div>
+        <span class="badge ${sevClass(incident.maxSeverity)}">${incident.maxSeverity || 'UNKNOWN'}</span>
+      `;
+      
+      if (!header.parentNode) groupDiv.appendChild(header);
+
+      let body = document.getElementById(`group-body-${incident.id}`);
+      if (!body) {
+        body = document.createElement('div');
+        body.id = `group-body-${incident.id}`;
+      }
+      body.className = `call-group-body${isExpanded ? ' expanded' : ''}`;
+      body.innerHTML = ''; // Rebuild the inner rows of the expanded view (simple enough to just replace)
+      
+      sortedCalls.forEach(call => {
+        const ts = call.triage_state || {};
+        const row = document.createElement('div');
+        row.className = `call-row${call.session_id === selectedId ? ' selected' : ''}`;
+        row.dataset.id = call.session_id;
+        row.onclick = () => selectCall(call.session_id);
+        
+        const isSilent = call.channel === 'silent_form';
+        const iconSvg = isSilent 
+          ? `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>`
+          : `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
+
+        row.innerHTML = `
+          <div class="call-info">
+            <div class="call-loc">${call.session_id}</div>
+            <div class="call-meta">${relTime(call.server_updated_at || call.started_at || Date.now())}</div>
+          </div>
+          ${isSilent 
+            ? `<span class="badge" style="background:rgba(255,255,255,0.1); color:var(--text-m);">${iconSvg} SILENT</span>` 
+            : `<span class="badge ${sevClass(ts.severity)}">${iconSvg} ${ts.severity || '?'}</span>`}
+        `;
+        body.appendChild(row);
+      });
+      if (!body.parentNode) groupDiv.appendChild(body);
+      queue.appendChild(groupDiv);
+    }
+  });
+
+  // Remove any stale DOM nodes that are no longer in sortedIncidents
+  const currentDOMIds = new Set(sortedIncidents.map(inc => inc.calls.length === 1 ? `row-${inc.calls[0].session_id}` : `group-${inc.id}`));
+  Array.from(queue.children).forEach(child => {
+    if (!currentDOMIds.has(child.id)) {
+      queue.removeChild(child);
+    }
+  });
+
+  document.querySelector('.panel-header span[style]').textContent =
+    `${Object.values(calls).filter(c=>!c.is_complete).length} live`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GAUGE
+// ═══════════════════════════════════════════════════════════════
+function setGauge(confidence, flag_for_human) {
+  const r = 36, circ = 2 * Math.PI * r;
+  const fill = document.getElementById('gaugeFill');
+  const val  = document.getElementById('gaugeVal');
+  fill.style.strokeDashoffset = circ * (1 - (confidence || 0));
+  if (flag_for_human) {
+    fill.style.stroke = 'var(--sev-crit)';
+    fill.classList.add('pulse-crit');
+  } else {
+    const pct = confidence || 0;
+    fill.style.stroke = pct >= 0.75 ? 'var(--accent)' : pct >= 0.5 ? 'var(--sev-med)' : 'var(--sev-crit)';
+    fill.classList.remove('pulse-crit');
+  }
+  val.textContent = `${Math.round((confidence||0)*100)}%`;
+  const fi = document.getElementById('flagIndicator');
+  const fl = document.getElementById('flagLabel');
+  fi.classList.toggle('flagged', !!flag_for_human);
+  fl.textContent = flag_for_human ? 'Flagged — needs human' : 'Agent handling';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRIAGE PANEL
+// ═══════════════════════════════════════════════════════════════
+function renderTriagePanel(call) {
+  const ts = call.triage_state || {};
+  document.getElementById('selectedSessionLabel').textContent = `Session: ${call.session_id}`;
+
+  const setEl = (id, val, cls) => {
+    const el = document.getElementById(id);
+    if (cls !== undefined) {
+      el.className = val != null ? `badge ${cls}` : 'kv-value kv-null';
+      el.textContent = val != null ? String(val) : '—';
+    } else {
+      el.className = val != null ? 'kv-value' : 'kv-value kv-null';
+      el.textContent = fmt(val);
+    }
+  };
+  setEl('tv-location', ts.location);
+  setEl('tv-type',     ts.emergency_type);
+  setEl('tv-people',   ts.people_affected);
+  setEl('tv-injuries', ts.injuries);
+  setEl('tv-severity', ts.severity,            sevClass(ts.severity));
+  setEl('tv-stress',   ts.caller_stress_level, ts.caller_stress_level || '');
+  setGauge(ts.confidence, ts.flag_for_human);
+
+  // Reasoning field — always update, never show literal null/undefined
+  const reasoningBox  = document.getElementById('reasoningBox');
+  const reasoningText = document.getElementById('reasoningText');
+  const reasoningLabel = document.getElementById('reasoningLabel');
+  const isSilentCall  = (call.channel === 'silent_form');
+  const reasoningVal  = ts.reasoning || null;
+  if (reasoningVal) {
+    reasoningBox.style.display = '';
+    reasoningBox.classList.toggle('is-form', isSilentCall);
+    reasoningLabel.textContent = isSilentCall ? 'Note' : 'AI Reasoning';
+    reasoningText.textContent  = reasoningVal;
+  } else {
+    reasoningBox.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRANSCRIPT
+// ═══════════════════════════════════════════════════════════════
+function renderTranscript(call) {
+  const wrap = document.getElementById('transcriptWrap');
+  wrap.innerHTML = '';
+  (call.transcript || []).forEach(msg => appendTranscriptMsg(call, msg, false));
+  const ts = call.triage_state || {};
+  if (ts.next_question && !call.is_complete) {
+    const prev = document.createElement('div');
+    prev.className = 'tx-preview';
+    prev.textContent = `⟶ Agent is about to ask: "${ts.next_question}"`;
+    wrap.appendChild(prev);
+  }
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function appendTranscriptMsg(call, msg, scrollIntoView = true) {
+  const wrap = document.getElementById('transcriptWrap');
+  // Remove stale preview line if re-rendering
+  const oldPreview = wrap.querySelector('.tx-preview');
+  if (oldPreview && scrollIntoView) oldPreview.remove();
+
+  const div = document.createElement('div');
+  div.className = `tx-msg ${msg.speaker}`;
+  div.innerHTML = `<span class="tx-speaker">${msg.speaker}</span><div class="tx-bubble">${msg.text}</div>`;
+  wrap.appendChild(div);
+  if (scrollIntoView) wrap.scrollTop = wrap.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CALL TIMER
+// ═══════════════════════════════════════════════════════════════
+function startTimer(call) {
+  clearInterval(timerInterval);
+  const el = document.getElementById('callTimer');
+  const tick = () => {
+    const s = Math.floor((Date.now() - (call.started_at || Date.now())) / 1000);
+    el.textContent = `${pad2(Math.floor(s/60))}:${pad2(s%60)}`;
+  };
+  tick();
+  timerInterval = setInterval(tick, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SELECT CALL
+// ═══════════════════════════════════════════════════════════════
+function selectCall(id) {
+  selectedId = id;
+  const call = calls[id];
+  if (!call) return;
+  renderQueue();
+  renderTriagePanel(call);
+  renderTranscript(call);
+  startTimer(call);
+
+  // Repurpose Operator Injection Bar for silent form vs voice calls
+  const injectInput = document.getElementById('injectInput');
+  const injectBtn = document.querySelector('.btn-send');
+  
+  if (call.channel === 'silent_form') {
+    injectInput.disabled = true;
+    injectInput.placeholder = "Silent Form Report — No live audio channel available.";
+    injectBtn.disabled = true;
+    injectBtn.style.opacity = "0.5";
+    injectBtn.style.cursor = "not-allowed";
+  } else {
+    injectInput.disabled = false;
+    injectInput.placeholder = "Operator injection — type a message and press Enter…";
+    injectBtn.disabled = false;
+    injectBtn.style.opacity = "1";
+    injectBtn.style.cursor = "pointer";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GEOCODE + MAP
+// ═══════════════════════════════════════════════════════════════
+const SEV_COLORS = { CRITICAL: '#F43F5E', HIGH: '#FB923C', MEDIUM: '#FACC15', LOW: '#4ADE80' };
+
+function mkIcon(color) {
+  return L.divIcon({
+    html: `<svg width="20" height="26" viewBox="0 0 20 26"><circle cx="10" cy="10" r="8" fill="${color}" opacity="0.9"/><line x1="10" y1="18" x2="10" y2="26" stroke="${color}" stroke-width="2"/></svg>`,
+    iconAnchor: [10, 26], className: ''
+  });
+}
+
+function mkGroupIcon(color, count) {
+  return L.divIcon({
+    html: `
+      <div style="position:relative;width:20px;height:26px">
+        <svg width="20" height="26" viewBox="0 0 20 26"><circle cx="10" cy="10" r="8" fill="${color}" opacity="0.9"/><line x1="10" y1="18" x2="10" y2="26" stroke="${color}" stroke-width="2"/></svg>
+        <div style="position:absolute;top:-4px;right:-8px;background:#1A1A24;border:1px solid ${color};color:#fff;font-size:10px;font-weight:bold;border-radius:10px;padding:1px 5px;line-height:1">${count}</div>
+      </div>
+    `,
+    iconAnchor: [10, 26], className: ''
+  });
+}
+
+async function geocode(location) {
+  const key = (location || '').trim().toLowerCase();
+  if (!key) return null;
+  if (geocodeCache[key]) return geocodeCache[key];
+  try {
+    const r = await fetch(`/api/geocode?location=${encodeURIComponent(location)}`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    geocodeCache[key] = data;
+    return data;
+  } catch { return null; }
+}
+
+async function renderMap() {
+  if (!leafletMap) return;
+  const incidents = buildIncidentsMap(calls);
+  const activeIds = new Set(Object.keys(incidents));
+
+  // Remove stale markers (e.g., when a call is merged into another incident)
+  for (const id in mapMarkers) {
+    if (!activeIds.has(id)) {
+      leafletMap.removeLayer(mapMarkers[id]);
+      delete mapMarkers[id];
+    }
+  }
+
+  // Upsert active markers
+  for (const [id, incident] of Object.entries(incidents)) {
+    let loc = null;
+    let peopleAffected = 0;
+    for (const call of incident.calls) {
+      if (call.triage_state?.location && !loc) loc = call.triage_state.location;
+      if (call.triage_state?.people_affected) peopleAffected += (parseInt(call.triage_state.people_affected) || 0);
+    }
+    if (!loc) continue;
+
+    const coords = await geocode(loc);
+    if (!coords) continue;
+
+    const color = SEV_COLORS[incident.maxSeverity] || '#8B8B96';
+    const count = incident.calls.length;
+    const sessionList = incident.calls.map(c => `<span style="color:#8B8B96;display:block;margin-top:2px">• ${c.session_id}</span>`).join('');
+    
+    const popupTitle = count > 1 ? `${count} calls about ${incident.emergencyType||'?'}` : `${incident.emergencyType||'?'}`;
+
+    const popup = `
+      <div style="font-family:Inter,sans-serif;font-size:12px;min-width:160px;background:#13131A;color:#F4F4F6;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px;line-height:1.6;max-height:200px;overflow-y:auto;">
+        <strong style="color:${color}">${incident.maxSeverity||'?'}</strong> — ${popupTitle}<br/>
+        📍 ${loc}<br/>
+        👥 ${fmt(peopleAffected || incident.calls[0].triage_state?.people_affected)} affected<br/>
+        <div style="margin-top:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1)">
+          ${sessionList}
+        </div>
+      </div>`;
+
+    if (mapMarkers[id]) {
+      mapMarkers[id].setLatLng([coords.lat, coords.lon]);
+      mapMarkers[id].setIcon(count > 1 ? mkGroupIcon(color, count) : mkIcon(color));
+      mapMarkers[id].getPopup().setContent(popup);
+    } else {
+      mapMarkers[id] = L.marker([coords.lat, coords.lon], { icon: count > 1 ? mkGroupIcon(color, count) : mkIcon(color) })
+        .addTo(leafletMap)
+        .bindPopup(popup, { className: 'dark-popup' });
+    }
+  }
+}
+
+function initMap() {
+  leafletMap = L.map('map', { zoomControl: false, attributionControl: false }).setView([20.5937, 78.9629], 5);
+  L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
+  const style = document.createElement('style');
+  style.textContent = `.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:transparent!important;box-shadow:none!important;}.leaflet-popup-content{margin:0!important;}`;
+  document.head.appendChild(style);
+}
+
+async function initMapWithKey() {
+  let apiKey = '';
+  try {
+    const r = await fetch('/api/config');
+    if (r.ok) { const d = await r.json(); apiKey = d.thunderforest_api_key || ''; }
+  } catch(e) { console.warn('Could not fetch /api/config:', e); }
+
+  if (apiKey) {
+    L.tileLayer(
+      `https://{s}.tile.thunderforest.com/transport-dark/{z}/{x}/{y}.png?apikey=${apiKey}`,
+      { subdomains: 'abcd', maxZoom: 22, attribution: '&copy; Thunderforest, OpenStreetMap' }
+    ).addTo(leafletMap);
+  } else {
+    // Fallback: OSM standard with dark CSS filter (no key needed)
+    console.warn('No Thunderforest key — falling back to OSM + dark filter');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(leafletMap);
+    document.getElementById('map').style.filter = 'invert(1) hue-rotate(180deg) saturate(0.6) brightness(0.85)';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CRITICAL ALERT  (shared — used by both real and simulate)
+// ═══════════════════════════════════════════════════════════════
+function triggerCriticalAlert(label) {
+  const banner = document.getElementById('critBanner');
+  banner.textContent = `⬤  CRITICAL EMERGENCY INCOMING — ${label}`;
+  banner.classList.add('visible');
+  // Web Audio beep — only if unlocked by user gesture
+  if (audioUnlocked) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.start(); osc.stop(ctx.currentTime + 0.6);
+    } catch(e) {}
+  }
+  // Tab title flash
+  let flash = false; const orig = document.title;
+  const fi = setInterval(() => { document.title = flash ? '🚨 CRITICAL ALERT' : orig; flash = !flash; }, 600);
+  setTimeout(() => { clearInterval(fi); document.title = orig; banner.classList.remove('visible'); }, 5000);
+}
+
+function simulateCritical() {
+  triggerCriticalAlert('test-room (simulated)');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEBSOCKET — connect / message handling / reconnect
+// ═══════════════════════════════════════════════════════════════
+function ingestCall(raw) {
+  // raw = row from DB history_snapshot or synthesised from triage_update events.
+  // Normalise: pull the latest triage_state from triage_history array.
+  const ts = raw.triage_history && raw.triage_history.length
+    ? raw.triage_history[raw.triage_history.length - 1]
+    : null;
+
+  if (ts && raw.incident_id) {
+    ts.incident_id = raw.incident_id;
+  }
+
+  const existing = calls[raw.session_id];
+  calls[raw.session_id] = {
+    session_id:       raw.session_id,
+    incident_id:      raw.incident_id || existing?.incident_id,
+    server_updated_at: ts?.server_updated_at || raw.server_updated_at || existing?.server_updated_at,
+    language_detected: raw.language_detected || 'hi-IN',
+    is_complete:       raw.is_complete || false,
+    dropped_at:        raw.dropped_at || null,
+    started_at:        existing?.started_at || Date.now(),
+    triage_state:      ts || existing?.triage_state || null,
+    channel:           raw.channel || existing?.channel || (ts ? ts.channel : 'voice') || 'voice',
+    transcript:        existing?.transcript || [],
+  };
+
+  // If DB sent full_transcript (list of strings), rebuild as alternating agent/user
+  if (raw.full_transcript && raw.full_transcript.length && !existing) {
+    calls[raw.session_id].transcript = raw.full_transcript.map((text, i) => ({
+      speaker: i % 2 === 0 ? 'agent' : 'user', text
+    }));
+  }
+}
+
+function handleHistorySnapshot(data) {
+  const callList = data.calls || [];
+  callList.forEach(ingestCall);
+
+  // Pin missing triage_state from triage_history if needed (done in ingestCall)
+  // Select first call if nothing selected
+  if (!selectedId || !calls[selectedId]) {
+    const sorted = Object.values(calls)
+      .sort((a,b) => (SEV_WEIGHT[a.triage_state?.severity]??9) - (SEV_WEIGHT[b.triage_state?.severity]??9));
+    if (sorted.length) selectedId = sorted[0].session_id;
+  }
+
+  renderQueue();
+  if (selectedId && calls[selectedId]) {
+    renderTriagePanel(calls[selectedId]);
+    renderTranscript(calls[selectedId]);
+    startTimer(calls[selectedId]);
+  }
+  updateAnalytics();
+
+  // Geocode and pin all incidents on the map
+  renderMap();
+}
+
+function handleTriageUpdate(msg) {
+  const sid   = msg.session_id;
+  const state = msg.data;  // plain TriageState dict
+
+  if (!calls[sid]) {
+    calls[sid] = {
+      session_id: sid, language_detected: 'hi-IN', is_complete: false,
+      dropped_at: null, started_at: Date.now(), triage_state: state, transcript: [],
+      channel: state.channel || 'voice',
+      server_updated_at: state.server_updated_at ? new Date(state.server_updated_at).getTime() : Date.now()
+    };
+  } else {
+    calls[sid].triage_state = state;
+    if (state.channel) calls[sid].channel = state.channel;
+    if (state.server_updated_at) calls[sid].server_updated_at = new Date(state.server_updated_at).getTime();
+  }
+
+  // Fire critical alert if severity just hit CRITICAL
+  if (state.severity === 'CRITICAL') {
+    triggerCriticalAlert(`${sid} — ${state.location || 'unknown location'}`);
+  }
+
+  renderQueue();
+  updateAnalytics();
+  renderMap();
+
+  if (sid === selectedId) {
+    renderTriagePanel(calls[sid]);
+  }
+}
+
+function handleTranscriptChunk(msg) {
+  const sid  = msg.session_id;
+  const chunk = msg.data;   // {speaker: "user"|"agent"|"operator", text: "..."}
+
+  if (!calls[sid]) {
+    calls[sid] = {
+      session_id: sid, language_detected: 'hi-IN', is_complete: false,
+      dropped_at: null, started_at: Date.now(), triage_state: null, transcript: []
+    };
+  }
+  calls[sid].transcript.push(chunk);
+
+  if (sid === selectedId) {
+    appendTranscriptMsg(calls[sid], chunk, true);
+  }
+}
+
+function connectWebSocket() {
+  setStatus('reconnecting');
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setStatus('connected');
+    wsRetryDelay = 1000;  // reset backoff
+    console.log('[WS] Connected to', WS_URL);
+  };
+
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    switch (msg.type) {
+      case 'history_snapshot':  handleHistorySnapshot(msg.data); break;
+      case 'triage_update':     handleTriageUpdate(msg);         break;
+      case 'transcript_chunk':  handleTranscriptChunk(msg);      break;
+      case 'ack': console.log('[WS] ack:', msg.message);         break;
+      case 'error': showToast(`Error: ${msg.message}`);              break;
+      default:    console.log('[WS] unknown msg type:', msg.type);
+    }
+  };
+
+  ws.onerror = (e) => { console.warn('[WS] error', e); };
+
+  ws.onclose = (event) => {
+    if (event.code === 1008) {
+      console.log('[WS] Session expired or invalid. Redirecting to login.');
+      window.location.href = '/login';
+      return;
+    }
+    setStatus('disconnected');
+    console.log(`[WS] closed — retrying in ${wsRetryDelay}ms`);
+    setTimeout(() => {
+      connectWebSocket();
+      wsRetryDelay = Math.min(wsRetryDelay * 2, 15000);
+    }, wsRetryDelay);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HUMAN TAKEOVER
+// ═══════════════════════════════════════════════════════════════
+function handleTakeover() {
+  const call = calls[selectedId];
+  if (!call) return;
+  const msg = { speaker: 'operator', text: `[Operator grabbed call — ${new Date().toLocaleTimeString()}]` };
+  call.transcript.push(msg);
+  appendTranscriptMsg(call, msg, true);
+  // Future: send to backend
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OPERATOR INJECT — sends real WS message to backend
+// ═══════════════════════════════════════════════════════════════
+function sendOperatorMsg() {
+  const input = document.getElementById('injectInput');
+  const text  = input.value.trim();
+  if (!text) return;
+  const call = calls[selectedId];
+  if (!call) return;
+
+  // Optimistic UI update
+  const msg = { speaker: 'operator', text };
+  call.transcript.push(msg);
+  appendTranscriptMsg(call, msg, true);
+  input.value = '';
+
+  // Send to backend
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'operator_message', session_id: selectedId, text }));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO PLAYER (mock scrubber — no real audio file yet)
+// ═══════════════════════════════════════════════════════════════
+function toggleAudio() {
+  audioPlaying = !audioPlaying;
+  const icon    = document.getElementById('audioIcon');
+  const scrubber = document.getElementById('audioScrubber');
+  const posEl   = document.getElementById('audioPos');
+  if (audioPlaying) {
+    icon.innerHTML = `<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>`;
+    let v = parseInt(scrubber.value);
+    audioInterval = setInterval(() => {
+      v = Math.min(30, v+1); scrubber.value = v;
+      posEl.textContent = `${Math.floor(v/60)}:${pad2(v%60)}`;
+      if (v >= 30) toggleAudio();
+    }, 1000);
+  } else {
+    icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+    clearInterval(audioInterval);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WALL CLOCK
+// ═══════════════════════════════════════════════════════════════
+function updateClock() {
+  document.getElementById('wallclock').textContent =
+    new Date().toLocaleTimeString('en-IN', { hour12: false });
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ═══════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════
+function showToast(message) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  
+  // Create close button
+  const closeBtn = document.createElement('span');
+  closeBtn.innerHTML = ' &times;';
+  closeBtn.style.float = 'right';
+  closeBtn.style.cursor = 'pointer';
+  closeBtn.style.opacity = '0.7';
+  closeBtn.onclick = () => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+  };
+  toast.appendChild(closeBtn);
+  
+  container.appendChild(toast);
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 5000);
+}
+
+window.addEventListener('load', async () => {
+  initMap();
+  await initMapWithKey();   // loads tile layer after fetching key from backend
+  showToast('Dashboard ready.');
+  showAudioPrompt();
+  connectWebSocket();
+  setInterval(renderQueue, 30000); // Re-calculate staleness every 30s
+  // Unlock audio on first interaction anywhere on the page
+  document.addEventListener('click', () => { audioUnlocked = true; }, { once: true });
+});
+</script>
+
+<div id="toast-container"></div>
+</body>
+</html>

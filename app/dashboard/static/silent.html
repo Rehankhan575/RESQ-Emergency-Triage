@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Emergency Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:          #0A0A0F;
+    --surface:     #13131A;
+    --surface-el:  #1A1A24;
+    --border:      rgba(255,255,255,0.08);
+    --border-h:    rgba(255,255,255,0.16);
+    --text-p:      #F4F4F6;
+    --text-s:      #8B8B96;
+    --text-t:      #5A5A66;
+    --accent:      #22D3EE;
+    --radius-card: 12px;
+    --radius-sm:   8px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-p);
+    background: var(--bg);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+
+  .header-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: flex-end;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  /* Quick Exit - Crucial Safety Feature */
+  .quick-exit {
+    pointer-events: auto;
+    background: var(--surface-el);
+    border: 1px solid var(--border);
+    color: var(--text-s);
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .quick-exit:hover {
+    background: #2a2a35;
+    color: var(--text-p);
+    border-color: var(--border-h);
+  }
+
+  .form-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 32px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .form-container h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    color: var(--text-p);
+  }
+
+  .field-group {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-s);
+  }
+
+  input, select, textarea {
+    background: var(--surface-el);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-p);
+    padding: 12px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .submit-btn {
+    background: var(--text-p);
+    color: var(--bg);
+    border: none;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+
+  .submit-btn:hover {
+    opacity: 0.9;
+  }
+  
+  .submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .message {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    display: none;
+    text-align: center;
+  }
+  .message.success {
+    display: block;
+    background: rgba(74, 222, 128, 0.1);
+    color: #4ADE80;
+    border: 1px solid rgba(74, 222, 128, 0.2);
+  }
+  .message.error {
+    display: block;
+    background: rgba(244, 63, 94, 0.1);
+    color: #F43F5E;
+    border: 1px solid rgba(244, 63, 94, 0.2);
+  }
+
+</style>
+</head>
+<body>
+
+<div class="header-bar">
+  <button type="button" class="quick-exit" onclick="quickExit()">Exit</button>
+</div>
+
+<div class="form-container">
+  <h1>Submit Report</h1>
+  <form id="silentForm" onsubmit="submitForm(event)">
+    <div class="field-group">
+      <label for="emergency_type">Emergency Type *</label>
+      <select id="emergency_type" required>
+        <option value="" disabled selected>Select an option</option>
+        <option value="FIRE">Fire</option>
+        <option value="MEDICAL">Medical Emergency</option>
+        <option value="ACCIDENT">Accident</option>
+        <option value="FLOOD">Flood</option>
+        <option value="CRIME">Crime</option>
+        <option value="OTHER">Other</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="location">Location *</label>
+      <input type="text" id="location" placeholder="Address, landmark, or description" required />
+    </div>
+
+    <div class="field-group">
+      <label for="description">Description *</label>
+      <textarea id="description" placeholder="Briefly describe what is happening" required></textarea>
+    </div>
+
+    <div class="field-group">
+      <label for="people_affected">People Affected (Optional)</label>
+      <input type="number" id="people_affected" min="1" placeholder="e.g. 2" />
+    </div>
+
+    <div class="field-group">
+      <label for="callback_number">Callback Number (Optional)</label>
+      <input type="text" id="callback_number" placeholder="Only if safe to receive messages" />
+    </div>
+
+    <button type="submit" id="submitBtn" class="submit-btn">Submit</button>
+    <div id="statusMessage" class="message"></div>
+  </form>
+</div>
+
+<script>
+  // Quick Exit functionality
+  function quickExit() {
+    window.location.replace('https://weather.com');
+  }
+
+  // Global Escape key listener for instant exit
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.keyCode === 27) {
+      quickExit();
+    }
+  });
+
+  async function submitForm(e) {
+    e.preventDefault();
+    
+    const btn = document.getElementById('submitBtn');
+    const msg = document.getElementById('statusMessage');
+    btn.disabled = true;
+    msg.className = 'message';
+    msg.textContent = '';
+
+    const locationText = document.getElementById('location').value;
+    let geocodedLocation = locationText;
+
+    try {
+      // Async geocode using the existing proxy to ensure backend cache is seeded.
+      // The backend proxy returns {lat, lon}, not display_name. But we just pass the original string as location.
+      const geoResp = await fetch(`/api/geocode?location=${encodeURIComponent(locationText)}`);
+    } catch (e) {
+      console.warn("Geocoding failed", e);
+    }
+
+    const payload = {
+      emergency_type: document.getElementById('emergency_type').value,
+      location: geocodedLocation,
+      description: document.getElementById('description').value,
+      people_affected: document.getElementById('people_affected').value ? parseInt(document.getElementById('people_affected').value) : null,
+      callback_number: document.getElementById('callback_number').value || null
+    };
+
+    try {
+      const response = await fetch('/api/silent-reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit report');
+      }
+
+      // Success
+      msg.textContent = 'Report received';
+      msg.className = 'message success';
+      document.getElementById('silentForm').reset();
+    } catch (err) {
+      console.error(err);
+      msg.textContent = 'Error submitting report. Please try again.';
+      msg.className = 'message error';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
