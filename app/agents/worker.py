@@ -19,6 +19,7 @@ from app.agents.voice_agent import TriageVoiceAgent
 from app.agents.triage.agent import warm_up_gemini_connection
 from aiohttp import web
 import httpx
+from app.services.call_recorder import start_recording, stop_recording
 
 logger = logging.getLogger("worker")
 
@@ -85,6 +86,13 @@ async def agent_entrypoint(ctx: JobContext):
     # Start IPC server dynamically
     asyncio.create_task(start_ipc_server(ctx.room.name))
     
+    # Start call recording if enabled
+    if os.getenv("ENABLE_CALL_RECORDING", "false").lower() == "true":
+        try:
+            start_recording(ctx.room, ctx.room.name)
+        except Exception as e:
+            logger.error(f"Failed to start recording: {e}")
+            
     await agent.start()
     
     # Cleanup on disconnect to prevent memory leaks
@@ -92,6 +100,20 @@ async def agent_entrypoint(ctx: JobContext):
     def on_disconnected():
         logger.info(f"Cleaning up agent for {ctx.room.name}")
         active_agents.pop(ctx.room.name, None)
+        
+        if os.getenv("ENABLE_CALL_RECORDING", "false").lower() == "true":
+            async def cleanup_recording():
+                try:
+                    await stop_recording(ctx.room.name)
+                    # Notify backend
+                    backend_url = os.getenv("API_URL", "http://127.0.0.1:8000")
+                    # No need to await a separate request, do it async
+                    async with httpx.AsyncClient() as client:
+                        await client.post(f"{backend_url}/api/calls/{ctx.room.name}/recording_path")
+                except Exception as e:
+                    logger.error(f"Failed to stop recording for {ctx.room.name}: {e}")
+            
+            asyncio.create_task(cleanup_recording())
 
 def serve_dev_html():
     """Serves the dev index.html and generates a livekit token for local testing."""
@@ -116,8 +138,18 @@ def serve_dev_html():
                 api_key = os.getenv("LIVEKIT_API_KEY")
                 api_secret = os.getenv("LIVEKIT_API_SECRET")
                 
-                # Generate a UNIQUE room and identity for every caller so they don't collide
-                session_id = f"call-{uuid.uuid4().hex[:8]}"
+                # Fetch session_id from backend so it matches the DB exactly
+                import urllib.request
+                import json
+                try:
+                    req = urllib.request.Request("http://127.0.0.1:8000/api/calls/start", method="POST")
+                    response = urllib.request.urlopen(req, timeout=2)
+                    backend_data = json.loads(response.read().decode())
+                    session_id = backend_data["session_id"]
+                except Exception as e:
+                    logger.error(f"Failed to create backend DB record: {e}")
+                    session_id = f"call-{uuid.uuid4().hex[:8]}"
+                
                 caller_identity = f"caller-{uuid.uuid4().hex[:8]}"
                 
                 token = AccessToken(api_key, api_secret) \
@@ -136,8 +168,10 @@ def serve_dev_html():
         with socketserver.TCPServer(("", port), DevHandler) as httpd:
             logger.info(f"Dev HTML server running at http://localhost:{port}")
             httpd.serve_forever()
-            
-    threading.Thread(target=run_server, daemon=True).start()
+
+    import threading
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
 
 def main():
     if "--dev" in sys.argv:

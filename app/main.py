@@ -24,13 +24,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SIH Triage API", lifespan=lifespan)
 
-# Add session middleware for securely signed cookies (12 hours)
-app.add_middleware(
-    SessionMiddleware, 
-    secret_key="SUPER_SECRET_CHANGE_IN_PRODUCTION",
-    max_age=12 * 60 * 60
-)
-
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith("/dashboard"):
@@ -39,6 +32,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(AuthMiddleware)
+
+# Add session middleware for securely signed cookies (12 hours)
+# MUST BE ADDED AFTER AuthMiddleware so it wraps it (runs before it)
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key="SUPER_SECRET_CHANGE_IN_PRODUCTION",
+    max_age=12 * 60 * 60
+)
 
 app.include_router(auth_router)
 app.include_router(calls_router)

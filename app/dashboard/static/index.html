@@ -1031,6 +1031,7 @@ function selectCall(id) {
   renderTriagePanel(call);
   renderTranscript(call);
   startTimer(call);
+  loadAudioForCall(id);
 
   // Repurpose Operator Injection Bar for silent form vs voice calls
   const injectInput = document.getElementById('injectInput');
@@ -1384,25 +1385,61 @@ function sendOperatorMsg() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AUDIO PLAYER (mock scrubber — no real audio file yet)
 // ═══════════════════════════════════════════════════════════════
+// AUDIO PLAYER
+// ═══════════════════════════════════════════════════════════════
+const realAudio = new Audio();
+const scrubber = document.getElementById('audioScrubber');
+const posEl = document.getElementById('audioPos');
+const icon = document.getElementById('audioIcon');
+
+realAudio.addEventListener('timeupdate', () => {
+  if (!isNaN(realAudio.duration) && realAudio.duration > 0) {
+    scrubber.max = realAudio.duration;
+    scrubber.value = realAudio.currentTime;
+    posEl.textContent = `${Math.floor(realAudio.currentTime/60)}:${pad2(Math.floor(realAudio.currentTime%60))} / ${Math.floor(realAudio.duration/60)}:${pad2(Math.floor(realAudio.duration%60))}`;
+  }
+});
+
+realAudio.addEventListener('ended', () => {
+  audioPlaying = false;
+  icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+});
+
+scrubber.addEventListener('input', () => {
+  if (!isNaN(realAudio.duration)) {
+    realAudio.currentTime = scrubber.value;
+  }
+});
+
 function toggleAudio() {
+  if (!selectedId) return;
+  if (!audioPlaying && !realAudio.src.endsWith(selectedId + '/recording')) {
+    realAudio.src = `/api/calls/${selectedId}/recording`;
+  }
+  
   audioPlaying = !audioPlaying;
-  const icon    = document.getElementById('audioIcon');
-  const scrubber = document.getElementById('audioScrubber');
-  const posEl   = document.getElementById('audioPos');
+  
   if (audioPlaying) {
     icon.innerHTML = `<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>`;
-    let v = parseInt(scrubber.value);
-    audioInterval = setInterval(() => {
-      v = Math.min(30, v+1); scrubber.value = v;
-      posEl.textContent = `${Math.floor(v/60)}:${pad2(v%60)}`;
-      if (v >= 30) toggleAudio();
-    }, 1000);
+    realAudio.play().catch(e => {
+      console.error("Audio playback failed", e);
+      toggleAudio();
+    });
   } else {
     icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
-    clearInterval(audioInterval);
+    realAudio.pause();
   }
+}
+
+function loadAudioForCall(id) {
+  audioPlaying = false;
+  icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+  realAudio.pause();
+  realAudio.src = `/api/calls/${id}/recording`;
+  realAudio.load();
+  scrubber.value = 0;
+  posEl.textContent = "0:00 / 0:00";
 }
 
 // ═══════════════════════════════════════════════════════════════

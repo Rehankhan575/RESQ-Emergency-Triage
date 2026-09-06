@@ -36,6 +36,7 @@ class CallLogDB(Base):
     is_complete = Column(Boolean, default=False)
     dropped_at = Column(DateTime, nullable=True)
     reasoning = Column(String, nullable=True)
+    recording_path = Column(String, nullable=True)
 
 # Using aiosqlite for async SQLite
 DATABASE_URL = "sqlite+aiosqlite:///./triage.db"

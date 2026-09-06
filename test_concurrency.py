@@ -65,7 +65,7 @@ async def main():
     import sqlite3
     conn = sqlite3.connect("triage.db")
     c = conn.cursor()
-    c.execute("SELECT session_id, full_transcript FROM call_logs ORDER BY created_at DESC LIMIT 5")
+    c.execute("SELECT session_id, full_transcript FROM call_logs LIMIT 5")
     rows = c.fetchall()
     print("\nRecent rows in CallLogDB:")
     for row in rows:

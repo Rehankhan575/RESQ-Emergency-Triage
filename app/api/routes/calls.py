@@ -20,10 +20,43 @@ class RegisterWorkerPayload(BaseModel):
 worker_registry: dict[str, str] = {}
 
 
+import os
+from fastapi.responses import FileResponse
+from fastapi import Request
+
 # Dependency to get DB session
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+@router.post("/{session_id}/recording_path")
+async def update_recording_path(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Internal endpoint for worker to save recording path"""
+    result = await db.execute(select(CallLogDB).where(CallLogDB.session_id == session_id))
+    log = result.scalars().first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Call not found")
+        
+    log.recording_path = f"recordings/{session_id}.wav"
+    await db.commit()
+    return {"status": "ok"}
+
+@router.get("/{session_id}/recording")
+async def get_recording(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Secure endpoint to stream the recording WAV file."""
+    if not request.session.get("user"):
+        raise HTTPException(status_code=403, detail="Not authenticated")
+        
+    result = await db.execute(select(CallLogDB).where(CallLogDB.session_id == session_id))
+    log = result.scalars().first()
+    
+    if not log or not log.recording_path:
+        raise HTTPException(status_code=404, detail="Recording not found")
+        
+    if not os.path.exists(log.recording_path):
+        raise HTTPException(status_code=404, detail="File missing from disk")
+        
+    return FileResponse(log.recording_path, media_type="audio/wav")
 
 @router.post("/start")
 async def start_call(db: AsyncSession = Depends(get_db)):
