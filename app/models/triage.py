@@ -28,6 +28,7 @@ class TriageState(BaseModel):
     next_question: str
     caller_stress_level: Optional[Literal['calm', 'anxious', 'panicking']] = None
     reasoning: Optional[str] = None
+    is_prank: Optional[bool] = False
 
 class CallLog(BaseModel):
     session_id: str

@@ -6,6 +6,7 @@ import httpx
 import base64
 import wave
 import io
+import random
 from typing import Optional
 from dotenv import load_dotenv
 from livekit import agents, rtc
@@ -82,6 +83,7 @@ def _default_state() -> dict:
         "flag_for_human": False,
         "next_question": "",
         "caller_stress_level": "calm",
+        "is_prank": False,
     }
 
 
@@ -89,6 +91,38 @@ class TriageVoiceAgent:
     def __init__(self, ctx: agents.JobContext, session_id: str = "unknown"):
         self.ctx = ctx
         self.session_id = session_id
+
+        # Filler logic
+        self.playback_lock = asyncio.Lock()
+        self.last_filler_index: Optional[int] = None
+        self.filler_played_this_turn: bool = False
+        self.filler_frames: list[rtc.AudioFrame] = []
+        filler_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "fillers")
+        
+        try:
+            if not os.path.exists(filler_dir):
+                logger.warning(f"filler_load_failed: Directory {filler_dir} not found, continuing without filler playback")
+            else:
+                for f in sorted(os.listdir(filler_dir)):
+                    if f.endswith(".wav"):
+                        with wave.open(os.path.join(filler_dir, f), "rb") as wf:
+                            raw_pcm = wf.readframes(wf.getnframes())
+                            sample_rate = wf.getframerate()
+                            num_channels = wf.getnchannels()
+                            frame = rtc.AudioFrame(
+                                data=raw_pcm,
+                                sample_rate=sample_rate,
+                                num_channels=num_channels,
+                                samples_per_channel=len(raw_pcm) // (2 * num_channels),
+                            )
+                            self.filler_frames.append(frame)
+                if not self.filler_frames:
+                    logger.warning("filler_load_failed: No valid wav files found, continuing without filler playback")
+                else:
+                    logger.info(f"Loaded {len(self.filler_frames)} filler clips")
+        except Exception as e:
+            logger.warning(f"filler_load_failed: {e}, continuing without filler playback")
+            self.filler_frames = []
 
         # Conversation history — alternating user / model strings
         self.history: list[str] = []
@@ -106,6 +140,7 @@ class TriageVoiceAgent:
             api_key=DEEPGRAM_API_KEY,
             language="hi",
             model="nova-2",
+            endpointing_ms=1000,
         )
 
         # Audio source and track for sending TTS audio back to the room
@@ -169,24 +204,78 @@ class TriageVoiceAgent:
         audio_stream = rtc.AudioStream(track)
         stt_stream = self.stt.stream()
 
+        pending_transcript_buffer = []
+        pending_debounce_task: asyncio.Task | None = None
+        last_speech_end_time = 0.0
+        last_receipt_time = 0.0
+
         async def push_frames():
             async for frame_event in audio_stream:
                 stt_stream.push_frame(frame_event.frame)
 
         async def read_events():
+            nonlocal pending_debounce_task, last_speech_end_time, last_receipt_time
+            
+            async def trigger_turn():
+                full_transcript = " ".join(pending_transcript_buffer)
+                pending_transcript_buffer.clear()
+                
+                logger.info("transcript_finalized")
+
+                # enqueue full aggregated transcript
+                await self.turn_queue.put(full_transcript)
+                
+            async def debounce_waiter():
+                await asyncio.sleep(2.0)
+                if pending_transcript_buffer:
+                    await trigger_turn()
+
             async for event in stt_stream:
                 if event.type == agents.stt.SpeechEventType.FINAL_TRANSCRIPT:
                     transcript = event.alternatives[0].text
                     if transcript.strip():
-                        logger.info(f"STT Transcript Received: {transcript}")
+                        current_time = time.time()
+                        receipt_gap = current_time - last_receipt_time if last_receipt_time > 0 else 0
+                        last_receipt_time = current_time
+                        
+                        speech_start = getattr(event, 'speech_start_time', 0.0)
+                        if speech_start is None: speech_start = 0.0
+                        speech_end = getattr(event, 'speech_end_time', 0.0)
+                        if speech_end is None: speech_end = 0.0
+                        
+                        speech_gap = speech_start - last_speech_end_time if last_speech_end_time > 0 else 0
+                        last_speech_end_time = speech_end
+                        
+                        logger.info(f"STT Transcript Received: '{transcript}' | receipt_gap={receipt_gap:.3f}s | speech_start={speech_start:.3f}s | speech_end={speech_end:.3f}s | speech_gap={speech_gap:.3f}s")
+                        
+                        # If this is the FIRST fragment of a turn, trigger filler
+                        if not pending_transcript_buffer:
+                            self.filler_played_this_turn = False
+                            if self.filler_frames:
+                                if not self.filler_played_this_turn:
+                                    self.filler_played_this_turn = True
+                                    available = [i for i in range(len(self.filler_frames)) if i != self.last_filler_index]
+                                    if not available:
+                                        available = [0]
+                                    self.last_filler_index = random.choice(available)
+                                    frame = self.filler_frames[self.last_filler_index]
+                                    logger.info("filler_playback_start")
+                                    asyncio.create_task(self.play_audio_frame(frame, is_real=False))
+                            else:
+                                logger.info("filler_skipped_empty")
+
+                        pending_transcript_buffer.append(transcript.strip())
+
                         # Broadcast user transcript immediately — don't wait for LLM
                         await broadcast_to_backend(
                             self.session_id,
                             "transcript_chunk",
                             {"speaker": "user", "text": transcript},
                         )
-                        # Fix 3: enqueue — returns instantly, never blocks STT
-                        await self.turn_queue.put(transcript)
+                        
+                        if pending_debounce_task and not pending_debounce_task.done():
+                            pending_debounce_task.cancel()
+                        pending_debounce_task = asyncio.create_task(debounce_waiter())
 
         try:
             await asyncio.gather(push_frames(), read_events())
@@ -197,8 +286,11 @@ class TriageVoiceAgent:
 
     async def _turn_worker(self):
         """Drains turn_queue sequentially so STT is never blocked by LLM/TTS."""
+        turn_seq = 0
         while True:
             transcript = await self.turn_queue.get()
+            turn_seq += 1
+            logger.info(f"LLM Turn Handler Invocation #{turn_seq}: Sending transcript exactly as: '{transcript}'")
             try:
                 await self.on_user_speech(transcript)
             except Exception as e:
@@ -211,18 +303,14 @@ class TriageVoiceAgent:
     async def on_user_speech(self, transcript: str):
         logger.info(f"Processing LLM Turn for: '{transcript}'")
 
-        # Fix 2: if already escalated, just record and return — LLM is done
-        if self.escalated:
-            self.history.append(transcript)
-            logger.info("Call already escalated — skipping LLM call.")
-            return
-
         # Fix 1: snapshot history BEFORE this turn, then append transcript
         history_before_turn = list(self.history)
         self.history.append(transcript)
 
         # Fix 1: single task with a soft-deadline filler, NOT cancel-and-restart
-        task = asyncio.create_task(process_turn(transcript, history_before_turn))
+        task = asyncio.create_task(
+            process_turn(transcript, history_before_turn, previous_state=self.current_state)
+        )
         success, result = False, {}
         try:
             done, _ = await asyncio.wait({task}, timeout=4.0)
@@ -307,7 +395,23 @@ class TriageVoiceAgent:
         except Exception as e:
             logger.error(f"TTS API Error: {e}")
 
+    async def play_audio_frame(self, frame: rtc.AudioFrame, is_real: bool = False):
+        async with self.playback_lock:
+            if is_real:
+                logger.info("real_response_playback_start")
+            else:
+                logger.info("filler_playback_lock_acquired")
+            try:
+                await self.audio_source.capture_frame(frame)
+                # Ensure the lock genuinely represents "audio finished playing"
+                duration = frame.samples_per_channel / frame.sample_rate
+                await asyncio.sleep(duration)
+                logger.info("Audio successfully published to the room and finished playing.")
+            except Exception as e:
+                logger.error(f"Failed to play audio frame: {e}")
+
     async def play_audio(self, audio_data: bytes):
+        logger.info("real_response_ready")
         try:
             with wave.open(io.BytesIO(audio_data), "rb") as wf:
                 raw_pcm = wf.readframes(wf.getnframes())
@@ -320,7 +424,6 @@ class TriageVoiceAgent:
                 num_channels=num_channels,
                 samples_per_channel=len(raw_pcm) // (2 * num_channels),
             )
-            await self.audio_source.capture_frame(frame)
-            logger.info("Audio successfully published to the room.")
+            await self.play_audio_frame(frame, is_real=True)
         except Exception as e:
-            logger.error(f"Failed to play audio frame: {e}")
+            logger.error(f"Failed to process audio data: {e}")

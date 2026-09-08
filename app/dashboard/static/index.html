@@ -812,9 +812,7 @@ function renderQueue() {
         row.onclick = () => selectCall(call.session_id);
       }
       row.className = `call-row${call.session_id === selectedId ? ' selected' : ''}${isCrit ? ' crit-glow' : ''}`;
-      const baseBreakdown = c.triage_state?.urgency_breakdown_base || c.triage_state?.severity || 'UNKNOWN';
-      const stl = staleness > 0 ? ` + ${staleness}m stale` : '';
-      const scoreStr = `Score: ${totalScore} (${baseBreakdown}${stl})`;
+      const scoreStr = incident.urgencyBadge;
       row.innerHTML = `
         <div class="sev-bar" style="background:${sevColor}"></div>
         <div class="call-info">

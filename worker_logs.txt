@@ -1,0 +1,113 @@
+dev mode is deprecated and will be removed in a future release; use `lk agent dev` instead (https://docs.livekit.io/reference/developer-tools/livekit-cli/#setup)
+in-process auto-reload has been removed from the Python CLI; use `lk agent dev` for hot-reload
+2026-09-08 19:40:17,612 - [36mDEBUG[0m asyncio - Using selector: KqueueSelector [90m[0m
+2026-09-08 19:40:17,612 - [32mINFO[0m livekit.agents - starting worker [90m{"version": "1.7.1", "rtc-version": "1.1.15"}[0m
+2026-09-08 19:40:17,613 - [32mINFO[0m livekit.agents - plugin registered [90m{"plugin": "livekit.plugins.deepgram", "version": "1.7.1"}[0m
+2026-09-08 19:40:17,613 - [32mINFO[0m livekit.agents - HTTP server listening on :63330 [90m[0m
+2026-09-08 19:40:17,984 - [32mINFO[0m livekit.agents - registered worker [90m{"agent_name": "", "deployment": "", "id": "AW_T3iUp8WdJ4p9", "url": "wss://emergency-triage-hzbddp60.livekit.cloud", "region": "India South", "protocol": 17}[0m
+2026-09-08 19:40:38,141 - [32mINFO[0m livekit.agents - received job request [90m{"job_id": "AJ_wKuJtvWmnfbZ", "dispatch_id": "AD_WUvLb2U254A8", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1", "room_id": "RM_5okz8mJLKyeT", "agent_name": "", "resuming": false, "enable_recording": true}[0m
+2026-09-08 19:40:38,196 - [36mDEBUG[0m livekit.agents - received assignment [90m{"agent_name": "", "room_id": "RM_5okz8mJLKyeT", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1", "job_id": "AJ_wKuJtvWmnfbZ", "dispatch_id": "AD_WUvLb2U254A8", "enable_recording": true}[0m
+2026-09-08 19:40:38,196 - [33mWARNING[0m livekit.agents - no warmed process available for job, waiting for one to be created [90m{"job_id": "AJ_wKuJtvWmnfbZ"}[0m
+2026-09-08 19:40:38,228 - [32mINFO[0m livekit.agents - initializing process [90m{"pid": 71957}[0m
+2026-09-08 19:40:40,047 - [32mINFO[0m livekit.agents - process initialized [90m{"pid": 71957, "elapsed_time": 1.82}[0m
+2026-09-08 19:40:40,047 - [36mDEBUG[0m asyncio - Using selector: KqueueSelector [90m{"pid": 71957}[0m
+2026-09-08 19:40:40,050 - [32mINFO[0m worker - Agent starting, connecting to room... [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:40,083 - [32mINFO[0m google_genai.chats - AFC is enabled with max remote calls: 10. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:40,501 - [33mWARNING[0m voice_agent - Gemini warm-up failed after 0.44s: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements. We recommend you to use the Interactions API.', 'status': 'NOT_FOUND'}} [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,908 - [32mINFO[0m voice_agent - Loaded 5 filler clips [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,909 - [32mINFO[0m voice_agent - Agent started. Publishing audio track... [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,910 - [32mINFO[0m worker - Worker IPC server running at http://127.0.0.1:63350/operator_message [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,925 - [31mERROR[0m worker - Failed to register worker URL with FastAPI: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,965 - [32mINFO[0m voice_agent - Agent audio track published successfully. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,966 - [32mINFO[0m voice_agent - Found existing participant: caller-c481a278 [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,966 - [32mINFO[0m voice_agent - TTS synthesis started for text: 'Namaste, main aapki madad ke liye yahan hoon. Kripya apni emergency bataayein.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:41,974 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:43,911 - [32mINFO[0m voice_agent - TTS synthesis completed. Publishing audio to room... [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:43,912 - [32mINFO[0m voice_agent - real_response_ready [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:43,912 - [32mINFO[0m voice_agent - real_response_playback_start [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:47,901 - [32mINFO[0m voice_agent - Subscribed to audio track from caller-c481a278 [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:47,901 - [32mINFO[0m call_recorder - Starting PCM capture to recordings/c481a278-c9a4-401e-9afe-83ba548bd1a1.wav [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:47,901 - [32mINFO[0m voice_agent - STT stream processing started for user audio track. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:47,902 - [36mDEBUG[0m livekit.agents - http_session(): creating a new httpclient ctx [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:49,001 - [36mDEBUG[0m livekit.plugins.deepgram - Established new Deepgram STT WebSocket connection: [90m{"headers": {"dg-project-id": "f0f41c92-45e6-41af-a9f0-e68bd8f0c3f3", "dg-request-id": "01a0815b-7194-72b1-8378-ad58e47d1225", "Date": "Tue, 08 Sep 2026 14:10:48 GMT"}, "pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:51,092 - [32mINFO[0m voice_agent - STT Transcript Received: 'मेरा नाम राहुल है.' | receipt_gap=0.000s | speech_start=0.000s | speech_end=0.000s | speech_gap=0.000s [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:51,092 - [32mINFO[0m voice_agent - filler_playback_start [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:51,094 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:53,502 - [32mINFO[0m voice_agent - Audio successfully published to the room and finished playing. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:53,502 - [32mINFO[0m voice_agent - filler_playback_lock_acquired [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,095 - [32mINFO[0m voice_agent - transcript_finalized [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,095 - [32mINFO[0m voice_agent - LLM Turn Handler Invocation #1: Sending transcript exactly as: 'मेरा नाम राहुल है.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,095 - [32mINFO[0m voice_agent - Processing LLM Turn for: 'मेरा नाम राहुल है.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,096 - [32mINFO[0m voice_agent - Gemini History Context: [] [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,096 - [32mINFO[0m google_genai.chats - AFC is enabled with max remote calls: 10. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,367 - [33mWARNING[0m voice_agent - API Error: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements. We recommend you to use the Interactions API.', 'status': 'NOT_FOUND'}} [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,368 - [33mWARNING[0m voice_agent - LLM call failed (consecutive_failures=1) [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,368 - [32mINFO[0m voice_agent - TTS synthesis started for text: 'Maaf kijiye, main samajh nahi paaya. Kripya dobara bataayein.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:54,370 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:55,071 - [32mINFO[0m voice_agent - Audio successfully published to the room and finished playing. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:55,093 - [32mINFO[0m voice_agent - STT Transcript Received: 'और मुझे accident हुआ है.' | receipt_gap=4.001s | speech_start=0.000s | speech_end=0.000s | speech_gap=0.000s [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:55,093 - [32mINFO[0m voice_agent - filler_playback_start [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:55,093 - [32mINFO[0m voice_agent - filler_playback_lock_acquired [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:55,095 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:56,205 - [32mINFO[0m voice_agent - TTS synthesis completed. Publishing audio to room... [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:56,205 - [32mINFO[0m voice_agent - real_response_ready [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:57,342 - [32mINFO[0m voice_agent - Audio successfully published to the room and finished playing. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:57,342 - [32mINFO[0m voice_agent - real_response_playback_start [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:40:58,096 - [32mINFO[0m voice_agent - transcript_finalized [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:04,714 - [32mINFO[0m voice_agent - Audio successfully published to the room and finished playing. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:04,714 - [32mINFO[0m voice_agent - LLM Turn Handler Invocation #2: Sending transcript exactly as: 'और मुझे accident हुआ है.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:04,714 - [32mINFO[0m voice_agent - Processing LLM Turn for: 'और मुझे accident हुआ है.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:04,715 - [32mINFO[0m voice_agent - Gemini History Context: [{'role': 'user', 'parts': [{'text': 'मेरा नाम राहुल है.'}]}, {'role': 'model', 'parts': [{'text': 'Maaf kijiye, main samajh nahi paaya. Kripya dobara bataayein.'}]}] [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:04,717 - [32mINFO[0m google_genai.chats - AFC is enabled with max remote calls: 10. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,104 - [33mWARNING[0m voice_agent - API Error: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements. We recommend you to use the Interactions API.', 'status': 'NOT_FOUND'}} [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,104 - [33mWARNING[0m voice_agent - LLM call failed (consecutive_failures=2) [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,107 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,108 - [32mINFO[0m voice_agent - ESCALATION TRIGGERED: Handing off to human operator. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,108 - [32mINFO[0m voice_agent - TTS synthesis started for text: 'Maaf karein, main aapko human operator se jod raha hoon.' [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:05,109 - [33mWARNING[0m voice_agent - Failed to broadcast to backend: All connection attempts failed [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:06,571 - [32mINFO[0m voice_agent - TTS synthesis completed. Publishing audio to room... [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:06,571 - [32mINFO[0m voice_agent - real_response_ready [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:06,572 - [32mINFO[0m voice_agent - real_response_playback_start [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:13,426 - [32mINFO[0m voice_agent - Audio successfully published to the room and finished playing. [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:21,195 - [32mINFO[0m livekit.agents - process exiting [90m{"reason": "parent process shutdown", "pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:21,195 - [36mDEBUG[0m livekit.agents - shutting down job task [90m{"reason": "parent process shutdown", "user_initiated": false, "pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:21,198 - [32mINFO[0m call_recorder - Finished PCM capture to recordings/c481a278-c9a4-401e-9afe-83ba548bd1a1.wav [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:21,216 - [36mDEBUG[0m livekit.agents - configuring session recording [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 19:41:21,571 - [36mDEBUG[0m livekit.agents - http_session(): closing the httpclient ctx [90m{"pid": 71957, "job_id": "AJ_wKuJtvWmnfbZ", "room": "c481a278-c9a4-401e-9afe-83ba548bd1a1"}[0m
+2026-09-08 20:37:08,326 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 0s [90m{"retry_count": 1, "max_retry": 16, "error": "message='worker connection closed unexpectedly', status_code=1006, retryable=True, body=msg.data=None msg.extra=None"}[0m
+2026-09-08 20:37:08,336 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 2s [90m{"retry_count": 2, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:10,342 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 4s [90m{"retry_count": 3, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:14,347 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 6s [90m{"retry_count": 4, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:20,352 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 8s [90m{"retry_count": 5, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:28,359 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 6, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:38,365 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 7, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:48,370 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 8, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:37:58,377 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 9, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:08,382 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 10, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:18,388 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 11, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:28,392 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 12, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:38,397 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 13, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:48,403 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 14, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:38:58,409 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 15, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:39:08,413 - [33mWARNING[0m livekit.agents - failed to connect to livekit, retrying in 10s [90m{"retry_count": 16, "max_retry": 16, "error": "Cannot connect to host emergency-triage-hzbddp60.livekit.cloud:443 ssl:default [nodename nor servname provided, or not known]"}[0m
+2026-09-08 20:39:18,419 - [31mERROR[0m livekit.agents - Error in _connection_task [90m[0m
+Traceback (most recent call last):
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/utils/log.py", line 17, in async_fn_logs
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/worker.py", line 1158, in _connection_task
+    raise RuntimeError(
+RuntimeError: failed to connect to livekit after 16 attempts
+2026-09-08 20:39:18,429 - [31mERROR[0m livekit.agents - worker failed [90m[0m
+Traceback (most recent call last):
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/cli/cli.py", line 318, in _worker_run
+    await server.run(devmode=devmode, unregistered=False)
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/worker.py", line 855, in run
+    await self._close_future
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/utils/log.py", line 17, in async_fn_logs
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rehan/Desktop/emergency_triage/sih_triage/.venv/lib/python3.11/site-packages/livekit/agents/worker.py", line 1158, in _connection_task
+    raise RuntimeError(
+RuntimeError: failed to connect to livekit after 16 attempts
+2026-09-08 20:39:18,431 - [32mINFO[0m livekit.agents - shutting down worker [90m{"id": "AW_T3iUp8WdJ4p9"}[0m
