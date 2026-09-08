@@ -55,9 +55,12 @@ async def run_scenario_a():
         print(f"  emergency_type : {agent.current_state.get('emergency_type')}")
         print(f"  next_question  : '{agent.current_state.get('next_question')}'")
 
+        closing = "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye."
         assert agent.current_state.get("is_prank") is True, "FAIL: is_prank should be True!"
         assert agent.current_state.get("flag_for_human") is False, "FAIL: flag_for_human should be False for clean early exit!"
-        assert "Theek hai, dhanyavaad" in agent.current_state.get("next_question"), "FAIL: Expected clean closing line!"
+        assert agent.current_state.get("next_question") == closing, (
+            f"FAIL: next_question must be the exact closing line, got {agent.current_state.get('next_question')!r}"
+        )
         print("\n>>> [SCENARIO A PASSED]: Early exit cleanly triggered with no further questions!")
 
 
@@ -131,9 +134,11 @@ async def run_scenario_b():
         print(f"  emergency_type : {agent.current_state.get('emergency_type')}")
         print(f"  next_question  : '{agent.current_state.get('next_question')}'")
 
+        closing = "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye."
         assert agent.current_state.get("is_prank") is True, "FAIL: is_prank should remain True as logged flag!"
         assert agent.current_state.get("flag_for_human") is True, "FAIL: flag_for_human MUST be forced to True when prior emergency exists!"
-        assert "phir se call" not in agent.current_state.get("next_question"), "FAIL: Should NOT have silently closed with exit line!"
+        assert agent.current_state.get("next_question") != closing, "FAIL: Early exit must NOT be triggered after a real distress signal!"
+        assert "phir se call" not in (agent.current_state.get("next_question") or ""), "FAIL: Should NOT have silently closed with exit line!"
         print("\n>>> [SCENARIO B PASSED]: Guard blocked early exit and forced flag_for_human=True for human review!")
 
 

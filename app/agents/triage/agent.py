@@ -92,9 +92,9 @@ CRITICAL RULES:
      Later turns if still panicking: vary between "Aap theek karenge. ", "Madad aa rahi hai, 
      thoda dheeraj rakhein. "
 
-7. Prank / False Alarm Early-Exit:
-   - Set `is_prank` = True ONLY when the caller EXPLICITLY and unambiguously states this is a joke/prank/test call (e.g. "ye prank hai", "just joking", "test call tha", "maine mazak kiya"), not from ambiguous or sarcastic-sounding language alone. Otherwise, set `is_prank` = False.
-   - If `is_prank` is True AND no emergency signals were reported, set `next_question` to: "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye." and `flag_for_human` = False.
+7. Prank / False Alarm Extraction:
+   - Set `is_prank` = True ONLY when the caller EXPLICITLY and unambiguously states this is a joke/prank/test call (e.g. "ye prank hai", "just joking", "test call tha", "maine mazak kiya"). NEVER infer `is_prank` from ambiguous, sarcastic, or casual language alone. Otherwise, set `is_prank` = False.
+   - If `is_prank` is True AND no emergency signals (`emergency_type` / `injuries` / `severity`) were reported, set `next_question` to: "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye." and `flag_for_human` = False.
    - If `is_prank` is claimed BUT emergency signals (type/injuries/severity) were already reported, set `is_prank` = True, set `flag_for_human` = True, and continue the triage flow.
 
 8. Output Format:
@@ -111,7 +111,7 @@ CRITICAL RULES:
        "next_question": "string (acknowledgment + next question, in natural Hindi/Hinglish, as a dispatcher would actually speak)",
        "caller_stress_level": "calm", "anxious", or "panicking",
        "reasoning": "string (max ~25 words, cite what was clear or unclear in the caller's speech)",
-       "is_prank": boolean
+       "is_prank": boolean or null
      }
 """
 
@@ -190,99 +190,100 @@ def validate_state_transition(
     return guarded
 
 
+PRANK_CLOSING_LINE = (
+    "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye."
+)
+
+
+def _field_is_set(val: Any) -> bool:
+    if val is None:
+        return False
+    if isinstance(val, str) and val.strip().lower() in ("none", "null", ""):
+        return False
+    return True
+
+
 def check_prank_exit(
-    state: Any,
-    previous_state: Optional[Any] = None,
+    previous_state: Any,
+    new_state: Any,
 ) -> Any:
     """
     Evaluates early-exit safety for prank/false-alarm calls.
 
-    Rules to enforce in code:
-      1. If is_prank == True AND emergency_type is null AND injuries is null AND severity is null
-         (i.e. no real emergency signal was ever captured in prior or current turn) ->
-         allow early exit: set next_question to "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye."
-         and flag_for_human = False.
-      2. If is_prank == True BUT any of emergency_type/injuries/severity were ALREADY set to a
-         non-null/concerning value in a PREVIOUS turn (before the prank claim), do NOT early-exit.
-         Instead: keep is_prank=True as a logged flag, continue the normal question flow AND
-         force flag_for_human = True.
+    Case A (pure prank): is_prank is True and emergency_type/injuries/severity are
+    null across BOTH previous_state and new_state -> close the call.
+    Case B (prank after real distress): is_prank is True but previous_state already
+    had a non-null emergency_type, injuries, or severity -> do not early-exit;
+    keep is_prank as metadata and force flag_for_human = True.
     """
-    if state is None:
-        return state
+    if new_state is None:
+        return new_state
 
-    # Allow flexible argument ordering if invoked as check_prank_exit(prev, curr)
-    if previous_state is not None and bool(_get_state_attr(previous_state, "is_prank", False)) and not bool(_get_state_attr(state, "is_prank", False)):
-        target_state = previous_state
-        prior_state = state
-    else:
-        target_state = state
-        prior_state = previous_state
+    if not bool(_get_state_attr(new_state, "is_prank", False)):
+        return new_state
 
-    is_prank = bool(_get_state_attr(target_state, "is_prank", False))
-    if not is_prank:
-        return target_state
+    is_dict = isinstance(new_state, dict)
+    guarded = dict(new_state) if is_dict else new_state.model_copy()
 
-    is_dict = isinstance(target_state, dict)
-    guarded = dict(target_state) if is_dict else target_state.model_copy()
+    prev_etype = _get_state_attr(previous_state, "emergency_type") if previous_state else None
+    prev_inj = _get_state_attr(previous_state, "injuries") if previous_state else None
+    prev_sev = _get_state_attr(previous_state, "severity") if previous_state else None
+    prev_has_signal = _field_is_set(prev_etype) or _field_is_set(prev_inj) or _field_is_set(prev_sev)
 
-    def _is_set(val: Any) -> bool:
-        if val is None:
-            return False
-        if isinstance(val, str) and val.strip().lower() in ("none", "null", ""):
-            return False
-        return True
-
-    # Previous turn signals
-    prev_etype = _get_state_attr(prior_state, "emergency_type") if prior_state else None
-    prev_inj = _get_state_attr(prior_state, "injuries") if prior_state else None
-    prev_sev = _get_state_attr(prior_state, "severity") if prior_state else None
-    prev_has_signal = _is_set(prev_etype) or _is_set(prev_inj) or _is_set(prev_sev)
-
-    # Current turn signals
     curr_etype = _get_state_attr(guarded, "emergency_type")
     curr_inj = _get_state_attr(guarded, "injuries")
     curr_sev = _get_state_attr(guarded, "severity")
-    curr_has_signal = _is_set(curr_etype) or _is_set(curr_inj) or _is_set(curr_sev)
+    curr_has_signal = _field_is_set(curr_etype) or _field_is_set(curr_inj) or _field_is_set(curr_sev)
 
     if not prev_has_signal and not curr_has_signal:
-        # Case A: Genuine prank / false alarm with no prior emergency signal
-        closing_line = "Theek hai, dhanyavaad. Agar kisi ko sach mein madad chahiye ho toh phir se call kijiye."
         if is_dict:
-            guarded["next_question"] = closing_line
+            guarded["next_question"] = PRANK_CLOSING_LINE
             guarded["flag_for_human"] = False
         else:
-            guarded.next_question = closing_line
+            guarded.next_question = PRANK_CLOSING_LINE
             guarded.flag_for_human = False
 
         logger.info(
-            f"check_prank_exit: Early exit allowed. No prior emergency signals detected "
-            f"[is_prank=True, emergency_type=None, injuries=None, severity=None]. "
-            f"Setting closing line and flag_for_human=False."
+            "check_prank_exit: Case A (pure prank) — early exit. "
+            f"[previous emergency_type/injuries/severity={prev_etype}/{prev_inj}/{prev_sev}, "
+            f"llm_output emergency_type/injuries/severity={curr_etype}/{curr_inj}/{curr_sev}, "
+            f"enforced next_question=closing line, flag_for_human=False]"
         )
+        return guarded
+
+    if is_dict:
+        guarded["is_prank"] = True
+        guarded["flag_for_human"] = True
+        curr_next_q = guarded.get("next_question") or ""
+        if PRANK_CLOSING_LINE in curr_next_q or "phir se call kijiye" in curr_next_q.lower():
+            guarded["next_question"] = (
+                "Aapne pehle emergency report ki thi. Kripya line par bane rahein, "
+                "human operator se connect kiya ja raha hai."
+            )
     else:
-        # Case B: Prank claimed BUT prior emergency signal exists -> Force flag_for_human=True
-        if is_dict:
-            guarded["is_prank"] = True
-            guarded["flag_for_human"] = True
-            closing_markers = ("phir se call", "dhanyavaad")
-            curr_next_q = guarded.get("next_question", "")
-            if any(m in curr_next_q.lower() for m in closing_markers):
-                guarded["next_question"] = "Aapne pehle emergency report ki thi. Kripya line par bane rahein, human operator se connect kiya ja raha hai."
-        else:
-            guarded.is_prank = True
-            guarded.flag_for_human = True
-            closing_markers = ("phir se call", "dhanyavaad")
-            if any(m in guarded.next_question.lower() for m in closing_markers):
-                guarded.next_question = "Aapne pehle emergency report ki thi. Kripya line par bane rahein, human operator se connect kiya ja raha hai."
+        guarded.is_prank = True
+        guarded.flag_for_human = True
+        curr_next_q = guarded.next_question or ""
+        if PRANK_CLOSING_LINE in curr_next_q or "phir se call kijiye" in curr_next_q.lower():
+            guarded.next_question = (
+                "Aapne pehle emergency report ki thi. Kripya line par bane rahein, "
+                "human operator se connect kiya ja raha hai."
+            )
 
-        logger.warning(
-            f"check_prank_exit: Prank claimed BUT prior emergency signal exists! "
-            f"Blocking early exit and forcing flag_for_human=True. "
-            f"[is_prank=True, prev_emergency_type={prev_etype}, prev_injuries={prev_inj}, "
-            f"prev_severity={prev_sev}, curr_emergency_type={curr_etype}, curr_injuries={curr_inj}, "
-            f"curr_severity={curr_sev}]"
-        )
+    trigger = []
+    if _field_is_set(prev_etype) or _field_is_set(curr_etype):
+        trigger.append("emergency_type")
+    if _field_is_set(prev_inj) or _field_is_set(curr_inj):
+        trigger.append("injuries")
+    if _field_is_set(prev_sev) or _field_is_set(curr_sev):
+        trigger.append("severity")
 
+    logger.warning(
+        "check_prank_exit: Case B (prank after real distress) — early exit blocked. "
+        f"[triggered_by={trigger}, previous emergency_type/injuries/severity="
+        f"{prev_etype}/{prev_inj}/{prev_sev}, llm_output emergency_type/injuries/severity="
+        f"{curr_etype}/{curr_inj}/{curr_sev}, enforced is_prank=True, flag_for_human=True]"
+    )
     return guarded
 
 
@@ -333,7 +334,7 @@ async def process_turn(
         state_dict = triage_state.model_dump()
         if previous_state is not None:
             state_dict = validate_state_transition(previous_state, state_dict)
-        state_dict = check_prank_exit(state_dict, previous_state)
+        state_dict = check_prank_exit(previous_state, state_dict)
         return True, state_dict
 
     except (json.JSONDecodeError, ValidationError) as e:
