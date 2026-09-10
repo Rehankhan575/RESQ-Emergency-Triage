@@ -387,8 +387,8 @@
 
   /* ── Audio player ─────────────────────────────────────────────── */
   .audio-player {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 14px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
     border-top: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
@@ -400,13 +400,14 @@
     background: var(--surface-el);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
-    transition: background 0.12s;
+    transition: background 0.12s, border-color 0.12s, transform 0.1s;
   }
-  .audio-btn:hover { background: rgba(255,255,255,0.12); }
+  .audio-btn:hover { background: rgba(255,255,255,0.14); border-color: var(--accent); }
+  .audio-btn:active { transform: scale(0.95); }
   .audio-scrubber {
     flex: 1;
     -webkit-appearance: none;
-    height: 3px;
+    height: 4px;
     background: var(--border-h);
     border-radius: 2px;
     outline: none;
@@ -414,12 +415,27 @@
   }
   .audio-scrubber::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 10px; height: 10px;
+    width: 12px; height: 12px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
+    box-shadow: 0 0 6px rgba(0, 242, 254, 0.4);
   }
-  .audio-time { font-size: 10px; color: var(--text-t); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .audio-time { font-size: 11px; color: var(--text-t); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .audio-action-btn {
+    width: 26px; height: 26px;
+    border-radius: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-m);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .audio-action-btn:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+  }
 
   /* ── Timer ────────────────────────────────────────────────────── */
   .call-timer { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; }
@@ -578,14 +594,21 @@
         <span class="reasoning-text" id="reasoningText"></span>
       </div>
       <!-- Audio player -->
-      <div class="audio-player">
-        <div class="audio-btn" onclick="toggleAudio(this)">
+      <div class="audio-player" id="audioPlayerContainer">
+        <div class="audio-btn" id="audioPlayBtn" onclick="toggleAudio()" title="Play / Pause Recording">
           <svg id="audioIcon" class="icon" style="width:12px;height:12px;margin-left:1px" viewBox="0 0 24 24">
             <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
           </svg>
         </div>
-        <input type="range" class="audio-scrubber" min="0" max="30" value="0" id="audioScrubber"/>
-        <span class="audio-time"><span id="audioPos">0:00</span> / 0:30</span>
+        <input type="range" class="audio-scrubber" min="0" max="100" value="0" id="audioScrubber"/>
+        <span class="audio-time" id="audioPos">0:00 / 0:00</span>
+        <a id="audioDownloadBtn" class="audio-action-btn" title="Download WAV Recording" href="#" download target="_blank" style="display:none;">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </a>
       </div>
     </div>
 
@@ -813,11 +836,14 @@ function renderQueue() {
       }
       row.className = `call-row${call.session_id === selectedId ? ' selected' : ''}${isCrit ? ' crit-glow' : ''}`;
       const scoreStr = incident.urgencyBadge;
+      const recIcon = (call.has_recording || Boolean(call.recording_path)) 
+        ? `<span title="Audio Recording Available" style="color:var(--accent);font-size:11px;margin-left:3px;">🎙️</span>` 
+        : '';
       row.innerHTML = `
         <div class="sev-bar" style="background:${sevColor}"></div>
         <div class="call-info">
           <div class="call-loc">${ts.location || 'Unknown location'}</div>
-          <div class="call-meta">${relTime(call.server_updated_at || call.started_at || Date.now())} &bull; ${call.session_id} <span style="color:var(--text-m);font-style:italic"> — ${scoreStr}</span></div>
+          <div class="call-meta">${relTime(call.server_updated_at || call.started_at || Date.now())} &bull; ${call.session_id}${recIcon} <span style="color:var(--text-m);font-style:italic"> — ${scoreStr}</span></div>
         </div>
         ${isSilent 
           ? `<span class="badge" style="background:rgba(255,255,255,0.1); color:var(--text-m);">${iconSvg} SILENT</span>` 
@@ -882,9 +908,13 @@ function renderQueue() {
           ? `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>`
           : `<svg class="icon" viewBox="0 0 24 24" style="color:currentColor;margin-right:4px;vertical-align:middle;width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
 
+        const groupRecIcon = (call.has_recording || Boolean(call.recording_path)) 
+          ? `<span title="Audio Recording Available" style="color:var(--accent);font-size:11px;margin-left:3px;">🎙️</span>` 
+          : '';
+
         row.innerHTML = `
           <div class="call-info">
-            <div class="call-loc">${call.session_id}</div>
+            <div class="call-loc">${call.session_id}${groupRecIcon}</div>
             <div class="call-meta">${relTime(call.server_updated_at || call.started_at || Date.now())}</div>
           </div>
           ${isSilent 
@@ -1221,6 +1251,8 @@ function ingestCall(raw) {
     server_updated_at: ts?.server_updated_at || raw.server_updated_at || existing?.server_updated_at,
     language_detected: raw.language_detected || 'hi-IN',
     is_complete:       raw.is_complete || false,
+    has_recording:     raw.has_recording || Boolean(raw.recording_path) || existing?.has_recording || false,
+    recording_path:    raw.recording_path || existing?.recording_path || null,
     dropped_at:        raw.dropped_at || null,
     started_at:        existing?.started_at || Date.now(),
     triage_state:      ts || existing?.triage_state || null,
@@ -1253,6 +1285,7 @@ function handleHistorySnapshot(data) {
     renderTriagePanel(calls[selectedId]);
     renderTranscript(calls[selectedId]);
     startTimer(calls[selectedId]);
+    loadAudioForCall(selectedId);
   }
   updateAnalytics();
 
@@ -1308,6 +1341,28 @@ function handleTranscriptChunk(msg) {
   }
 }
 
+function handleRecordingReady(msg) {
+  const sid = msg.session_id;
+  const data = msg.data || {};
+  if (!calls[sid]) {
+    calls[sid] = {
+      session_id: sid, language_detected: 'hi-IN', is_complete: true,
+      dropped_at: null, started_at: Date.now(), triage_state: null, transcript: [],
+      channel: 'voice', has_recording: true, recording_path: data.recording_path
+    };
+  } else {
+    calls[sid].is_complete = true;
+    calls[sid].has_recording = true;
+    calls[sid].recording_path = data.recording_path;
+  }
+  
+  showToast(`Recording ready for call ${sid.slice(0, 8)}`);
+  renderQueue();
+  if (selectedId === sid) {
+    loadAudioForCall(sid);
+  }
+}
+
 function connectWebSocket() {
   setStatus('reconnecting');
   ws = new WebSocket(WS_URL);
@@ -1325,6 +1380,7 @@ function connectWebSocket() {
       case 'history_snapshot':  handleHistorySnapshot(msg.data); break;
       case 'triage_update':     handleTriageUpdate(msg);         break;
       case 'transcript_chunk':  handleTranscriptChunk(msg);      break;
+      case 'recording_ready':   handleRecordingReady(msg);       break;
       case 'ack': console.log('[WS] ack:', msg.message);         break;
       case 'error': showToast(`Error: ${msg.message}`);              break;
       default:    console.log('[WS] unknown msg type:', msg.type);
@@ -1383,50 +1439,94 @@ function sendOperatorMsg() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════
 // AUDIO PLAYER
 // ═══════════════════════════════════════════════════════════════
 const realAudio = new Audio();
 const scrubber = document.getElementById('audioScrubber');
 const posEl = document.getElementById('audioPos');
 const icon = document.getElementById('audioIcon');
+const playBtn = document.getElementById('audioPlayBtn');
+const downloadBtn = document.getElementById('audioDownloadBtn');
+
+function fmtTime(sec) {
+  if (isNaN(sec) || sec < 0 || !isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${pad2(s)}`;
+}
+
+realAudio.addEventListener('loadedmetadata', () => {
+  if (!isNaN(realAudio.duration) && realAudio.duration > 0 && isFinite(realAudio.duration)) {
+    scrubber.max = realAudio.duration;
+    scrubber.disabled = false;
+    posEl.textContent = `0:00 / ${fmtTime(realAudio.duration)}`;
+  }
+});
 
 realAudio.addEventListener('timeupdate', () => {
-  if (!isNaN(realAudio.duration) && realAudio.duration > 0) {
+  if (!isNaN(realAudio.duration) && realAudio.duration > 0 && isFinite(realAudio.duration)) {
     scrubber.max = realAudio.duration;
     scrubber.value = realAudio.currentTime;
-    posEl.textContent = `${Math.floor(realAudio.currentTime/60)}:${pad2(Math.floor(realAudio.currentTime%60))} / ${Math.floor(realAudio.duration/60)}:${pad2(Math.floor(realAudio.duration%60))}`;
+    posEl.textContent = `${fmtTime(realAudio.currentTime)} / ${fmtTime(realAudio.duration)}`;
   }
 });
 
 realAudio.addEventListener('ended', () => {
   audioPlaying = false;
   icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+  scrubber.value = 0;
+  if (!isNaN(realAudio.duration) && isFinite(realAudio.duration)) {
+    posEl.textContent = `0:00 / ${fmtTime(realAudio.duration)}`;
+  }
+});
+
+realAudio.addEventListener('error', () => {
+  if (audioPlaying) {
+    audioPlaying = false;
+    icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+  }
+  const call = calls[selectedId];
+  if (call && call.channel === 'silent_form') {
+    posEl.textContent = "Silent form (No audio)";
+  } else {
+    posEl.textContent = "Recording pending/unavailable";
+  }
+  scrubber.disabled = true;
+  if (downloadBtn) downloadBtn.style.display = 'none';
 });
 
 scrubber.addEventListener('input', () => {
-  if (!isNaN(realAudio.duration)) {
+  if (!isNaN(realAudio.duration) && isFinite(realAudio.duration)) {
     realAudio.currentTime = scrubber.value;
   }
 });
 
 function toggleAudio() {
   if (!selectedId) return;
-  if (!audioPlaying && !realAudio.src.endsWith(selectedId + '/recording')) {
-    realAudio.src = `/api/calls/${selectedId}/recording`;
+  const call = calls[selectedId];
+  if (call && call.channel === 'silent_form') {
+    showToast("This is a silent form report. No audio recording exists.");
+    return;
+  }
+
+  const expectedSrc = `/api/calls/${selectedId}/recording`;
+  if (!realAudio.src.endsWith(expectedSrc)) {
+    realAudio.src = expectedSrc;
   }
   
-  audioPlaying = !audioPlaying;
-  
   if (audioPlaying) {
-    icon.innerHTML = `<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>`;
-    realAudio.play().catch(e => {
-      console.error("Audio playback failed", e);
-      toggleAudio();
-    });
-  } else {
+    audioPlaying = false;
     icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
     realAudio.pause();
+  } else {
+    audioPlaying = true;
+    icon.innerHTML = `<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>`;
+    realAudio.play().catch(e => {
+      console.warn("Audio playback not available or failed:", e);
+      audioPlaying = false;
+      icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
+      showToast("Recording is still saving or not yet available.");
+    });
   }
 }
 
@@ -1434,10 +1534,27 @@ function loadAudioForCall(id) {
   audioPlaying = false;
   icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>`;
   realAudio.pause();
-  realAudio.src = `/api/calls/${id}/recording`;
-  realAudio.load();
   scrubber.value = 0;
-  posEl.textContent = "0:00 / 0:00";
+
+  const call = calls[id];
+  if (call && call.channel === 'silent_form') {
+    realAudio.removeAttribute('src');
+    posEl.textContent = "Silent form (No audio)";
+    scrubber.disabled = true;
+    if (downloadBtn) downloadBtn.style.display = 'none';
+    return;
+  }
+
+  scrubber.disabled = false;
+  const recUrl = `/api/calls/${id}/recording`;
+  realAudio.src = recUrl;
+  realAudio.load();
+  posEl.textContent = "Loading recording...";
+  if (downloadBtn) {
+    downloadBtn.style.display = 'inline-flex';
+    downloadBtn.href = recUrl;
+    downloadBtn.download = `call-${id.slice(0,8)}.wav`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

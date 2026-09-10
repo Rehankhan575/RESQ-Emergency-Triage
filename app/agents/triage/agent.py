@@ -15,7 +15,16 @@ logger = logging.getLogger("voice_agent")
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_CANDIDATES = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.6-flash",
+]
+MODEL_NAME = MODEL_CANDIDATES[0]
+
+# Per-attempt hard ceiling — short enough that the fallback loop can exhaust
+# MODEL_CANDIDATES within the outer wait_for() budget in voice_agent.py (8s).
+_PER_ATTEMPT_TIMEOUT_S = 3.5
 
 
 async def warm_up_gemini_connection() -> None:
@@ -27,21 +36,23 @@ async def warm_up_gemini_connection() -> None:
     """
     import time as _time
     t0 = _time.perf_counter()
-    try:
-        chat = client.aio.chats.create(
-            model=MODEL_NAME,
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-                max_output_tokens=4,
-                thinking_config=types.ThinkingConfig(thinking_level="minimal"),
-            ),
-        )
-        resp = await chat.send_message("ping")
-        elapsed = _time.perf_counter() - t0
-        logger.info(f"Gemini connection warmed in {elapsed:.2f}s (response: {str(resp.text)[:20]!r})")
-    except Exception as exc:
-        elapsed = _time.perf_counter() - t0
-        logger.warning(f"Gemini warm-up failed after {elapsed:.2f}s: {exc}")
+    for model_name in MODEL_CANDIDATES:
+        try:
+            chat = client.aio.chats.create(
+                model=model_name,
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    max_output_tokens=4,
+                ),
+            )
+            resp = await chat.send_message("ping")
+            elapsed = _time.perf_counter() - t0
+            logger.info(f"Gemini connection warmed in {elapsed:.2f}s on model={model_name} (response: {str(resp.text)[:20]!r})")
+            return
+        except Exception as exc:
+            logger.warning(f"Gemini warm-up failed for model={model_name}: {exc}")
+    elapsed = _time.perf_counter() - t0
+    logger.warning(f"Gemini warm-up failed for all candidates after {elapsed:.2f}s")
 
 
 class TriagePrompt:
@@ -156,6 +167,26 @@ def validate_state_transition(
         logger.warning(
             f"validate_state_transition override: flag_for_human reverted by LLM. "
             f"[previous={prev_flag}, llm_output={new_flag}, enforced=True]"
+        )
+        if is_dict:
+            guarded["flag_for_human"] = True
+        else:
+            guarded.flag_for_human = True
+
+    # Rule 1b: deterministic enforcement of Rule 5 escalation criteria
+    # (LLM is prompt-instructed to do this but doesn't always comply — enforce in code)
+    cur_sev_raw = _get_state_attr(guarded, "severity", None)
+    cur_sev_str = cur_sev_raw.value if hasattr(cur_sev_raw, "value") else cur_sev_raw
+    cur_injuries = _get_state_attr(guarded, "injuries", None)
+    current_flag = bool(_get_state_attr(guarded, "flag_for_human", False))
+    must_escalate = (
+        cur_sev_str == "CRITICAL"
+        or (cur_sev_str == "HIGH" and cur_injuries is True)
+    )
+    if must_escalate and not current_flag:
+        logger.warning(
+            f"validate_state_transition override: forcing flag_for_human=True "
+            f"(severity={cur_sev_str}, injuries={cur_injuries}, llm_output=False)"
         )
         if is_dict:
             guarded["flag_for_human"] = True
@@ -287,10 +318,13 @@ def check_prank_exit(
     return guarded
 
 
+_RETRYABLE_CODES = ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
+
 async def process_turn(
     user_transcript: str,
     history_before_turn: List[str],
     previous_state: Optional[Any] = None,
+    _max_retries_per_model: int = 2,
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Process the current turn of the conversation.
@@ -306,44 +340,74 @@ async def process_turn(
         (False, {})                on any failure — no fallback state is
                                     fabricated here; policy lives in the caller.
     """
-    try:
-        # Build Gemini-format history from the pre-turn snapshot
-        gemini_history = []
-        for i, text in enumerate(history_before_turn):
-            role = "user" if i % 2 == 0 else "model"
-            gemini_history.append({"role": role, "parts": [{"text": text}]})
+    # Build Gemini-format history from the pre-turn snapshot
+    gemini_history = []
+    for i, text in enumerate(history_before_turn):
+        role = "user" if i % 2 == 0 else "model"
+        gemini_history.append({"role": role, "parts": [{"text": text}]})
 
-        logger.info(f"Gemini History Context: {gemini_history}")
+    logger.info(f"Gemini History Context: {gemini_history}")
 
-        chat = client.aio.chats.create(
-            model=MODEL_NAME,
-            history=gemini_history,
-            config=types.GenerateContentConfig(
-                system_instruction=TriagePrompt.get_system_prompt(),
-                temperature=0.3,
-                response_mime_type="application/json",
-                thinking_config=types.ThinkingConfig(thinking_level="minimal"),
-            ),
-        )
+    for model_name in MODEL_CANDIDATES:
+        for attempt in range(1, _max_retries_per_model + 1):
+            try:
+                chat = client.aio.chats.create(
+                    model=model_name,
+                    history=gemini_history,
+                    config=types.GenerateContentConfig(
+                        system_instruction=TriagePrompt.get_system_prompt(),
+                        temperature=0.3,
+                        response_mime_type="application/json",
+                        response_schema=TriageState,
+                    ),
+                )
 
-        response = await chat.send_message(user_transcript)
-        parsed_json = json.loads(response.text)
+                response = await asyncio.wait_for(
+                    chat.send_message(user_transcript), timeout=_PER_ATTEMPT_TIMEOUT_S
+                )
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
 
-        # Validate against TriageState Pydantic model
-        triage_state = TriageState(**parsed_json)
-        state_dict = triage_state.model_dump()
-        if previous_state is not None:
-            state_dict = validate_state_transition(previous_state, state_dict)
-        state_dict = check_prank_exit(previous_state, state_dict)
-        return True, state_dict
+                parsed_json = json.loads(raw_text.strip())
 
-    except (json.JSONDecodeError, ValidationError) as e:
-        logger.warning(f"Validation or Parsing Error: {e}")
-        return False, {}
+                # Validate against TriageState Pydantic model
+                triage_state = TriageState(**parsed_json)
+                state_dict = triage_state.model_dump()
+                if previous_state is not None:
+                    state_dict = validate_state_transition(previous_state, state_dict)
+                state_dict = check_prank_exit(previous_state, state_dict)
+                logger.info(f"LLM succeeded on model={model_name}")
+                return True, state_dict
 
-    except Exception as e:
-        logger.warning(f"API Error: {e}")
-        return False, {}
+            except asyncio.TimeoutError:
+                # Model hung — don't retry the same model, fall through to next candidate.
+                logger.warning(
+                    f"Per-attempt timeout ({_PER_ATTEMPT_TIMEOUT_S}s) on model={model_name} "
+                    f"(attempt {attempt}/{_max_retries_per_model}) — moving to next model"
+                )
+                break
+
+            except (json.JSONDecodeError, ValidationError) as e:
+                logger.warning(f"Validation or Parsing Error on model={model_name}: {e}")
+                break
+
+            except Exception as e:
+                err_str = str(e)
+                is_retryable = any(code in err_str for code in _RETRYABLE_CODES)
+                if is_retryable:
+                    logger.warning(
+                        f"Retryable API error on model={model_name}, moving directly to next model: {err_str[:120]}"
+                    )
+                    break
+                logger.warning(f"API Error on model={model_name}: {e}")
+                break
+
+    return False, {}
 
 
 if __name__ == "__main__":
@@ -363,7 +427,7 @@ if __name__ == "__main__":
     ]
 
     async def run_tests():
-        print(f"=== Triage Agent Test — Model: {MODEL_NAME} ===\n")
+        print(f"=== Triage Agent Test — Candidates: {MODEL_CANDIDATES} ===\n")
         for tc in TEST_CASES:
             print(f"--- {tc['label']} ---")
             print(f"  Transcript : {tc['transcript']}")
@@ -382,3 +446,4 @@ if __name__ == "__main__":
             print()
 
     asyncio.run(run_tests())
+

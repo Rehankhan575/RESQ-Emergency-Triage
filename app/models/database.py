@@ -49,5 +49,25 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 async def init_db():
+    import os
+    import hashlib
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(OperatorDB))
+        if not result.scalars().first():
+            salt = os.urandom(16)
+            key = hashlib.pbkdf2_hmac('sha256', 'password'.encode('utf-8'), salt, 100000)
+            default_admin = OperatorDB(
+                username="admin",
+                password_hash=key.hex(),
+                salt=salt.hex(),
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(default_admin)
+            await session.commit()
+

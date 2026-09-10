@@ -38,6 +38,7 @@ async def _fetch_history_snapshot(session_id: Optional[str]) -> dict:
     return {"calls": calls}
 
 
+import os
 from app.services.incident_clustering import get_incident_state
 
 def _row_to_dict(row: CallLogDB) -> dict:
@@ -47,6 +48,7 @@ def _row_to_dict(row: CallLogDB) -> dict:
         if inc and inc.get("last_updated_at"):
             server_updated_at = inc["last_updated_at"].isoformat()
             
+    has_rec = bool(row.recording_path and os.path.exists(row.recording_path))
     return {
         "session_id": row.session_id,
         "incident_id": row.incident_id,
@@ -55,6 +57,8 @@ def _row_to_dict(row: CallLogDB) -> dict:
         "full_transcript": row.full_transcript,
         "triage_history": row.triage_history,
         "is_complete": row.is_complete,
+        "recording_path": row.recording_path,
+        "has_recording": has_rec,
         "dropped_at": row.dropped_at.isoformat() if row.dropped_at else None,
         "server_updated_at": server_updated_at
     }

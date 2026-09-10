@@ -10,4 +10,7 @@ recordings/
 *.log
 .system_generated/
 test_audio.wav
+*.wav
+!app/assets/fillers/*.wav
+worker_run*.txt
 .DS_Store

@@ -38,8 +38,21 @@ async def update_recording_path(session_id: str, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="Call not found")
         
     log.recording_path = f"recordings/{session_id}.wav"
+    log.is_complete = True
     await db.commit()
-    return {"status": "ok"}
+
+    has_file = os.path.exists(log.recording_path)
+    await ws_manager.broadcast(
+        session_id,
+        "recording_ready",
+        {
+            "session_id": session_id,
+            "recording_path": log.recording_path,
+            "has_recording": has_file,
+            "is_complete": True
+        }
+    )
+    return {"status": "ok", "recording_path": log.recording_path}
 
 @router.get("/{session_id}/recording")
 async def get_recording(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
@@ -87,7 +100,9 @@ async def get_history(session_id: str, db: AsyncSession = Depends(get_db)):
         "full_transcript": call_log.full_transcript,
         "triage_history": call_log.triage_history,
         "is_complete": call_log.is_complete,
-        "dropped_at": call_log.dropped_at
+        "dropped_at": call_log.dropped_at,
+        "recording_path": call_log.recording_path,
+        "has_recording": bool(call_log.recording_path and os.path.exists(call_log.recording_path))
     }
 
 import asyncio

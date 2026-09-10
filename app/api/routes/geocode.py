@@ -23,13 +23,45 @@ _HEADERS = {
     "Accept-Language": "en,hi",
 }
 
+# Low-importance threshold — warn but don't block if Nominatim returns an
+# ambiguous low-confidence match.
+_IMPORTANCE_WARN_THRESHOLD = 0.2
+
+# Case-insensitive substring replacements for common Indian city spelling
+# variants that cause wrong-city matches in Nominatim.
+# Keys are matched as whole words inside the location string (after lowercasing).
+_PLACE_NAME_NORMALIZATIONS: dict[str, str] = {
+    "gandhi nagar": "gandhinagar",
+}
+
+
+def _normalize_location(location: str) -> str:
+    """
+    Apply case-insensitive whole-phrase substitutions from _PLACE_NAME_NORMALIZATIONS.
+    The original string is kept as the cache key; only the Nominatim query is affected.
+    """
+    normalized = location
+    lower = location.lower()
+    for variant, canonical in _PLACE_NAME_NORMALIZATIONS.items():
+        if variant in lower:
+            # Replace case-insensitively, preserving surrounding text
+            import re
+            normalized = re.sub(re.escape(variant), canonical, normalized, flags=re.IGNORECASE)
+            logger.info(f"Normalized location spelling: {location!r} → {normalized!r}")
+    return normalized
+
 
 async def _nominatim_request(location: str) -> list:
     """Single Nominatim request. Raises httpx exceptions on failure."""
     async with httpx.AsyncClient(timeout=8.0) as client:
         resp = await client.get(
             _NOMINATIM_URL,
-            params={"q": location, "format": "json", "limit": 1},
+            params={
+                "q": location,
+                "format": "json",
+                "limit": 1,
+                "countrycodes": "in",  # restrict to India
+            },
             headers=_HEADERS,
         )
         resp.raise_for_status()
@@ -43,7 +75,10 @@ async def geocode(location: str = Query(..., description="Location string to geo
         logger.info(f"Geocode cache hit: {location!r}")
         return _cache[key]
 
-    logger.info(f"Geocoding via Nominatim: {location!r}")
+    # Normalize spelling variants before sending to Nominatim,
+    # but keep the original string as the cache key.
+    query_location = _normalize_location(location.strip())
+    logger.info(f"Geocoding via Nominatim: {location!r} (query: {query_location!r})")
 
     results = None
     last_exc = None
@@ -53,7 +88,7 @@ async def geocode(location: str = Query(..., description="Location string to geo
             if attempt > 0:
                 await asyncio.sleep(1.0)  # brief back-off before retry
                 logger.info(f"Nominatim retry attempt {attempt + 1} for {location!r}")
-            results = await _nominatim_request(location)
+            results = await _nominatim_request(query_location)
             last_exc = None
             break
         except httpx.HTTPStatusError as exc:
@@ -74,7 +109,15 @@ async def geocode(location: str = Query(..., description="Location string to geo
     if not results:
         raise HTTPException(status_code=404, detail=f"Location not found: {location!r}")
 
+    # Low-confidence guard: warn if importance is below threshold
+    importance = float(results[0].get("importance", 1.0))
+    if importance < _IMPORTANCE_WARN_THRESHOLD:
+        logger.warning(
+            f"Low-confidence geocode match for {location!r}: "
+            f"importance={importance:.4f}, resolved to {results[0].get('display_name')!r}"
+        )
+
     result = {"lat": float(results[0]["lat"]), "lon": float(results[0]["lon"])}
     _cache[key] = result
-    logger.info(f"Geocoded {location!r} → {result}")
+    logger.info(f"Geocoded {location!r} → {result} (importance={importance:.4f})")
     return result

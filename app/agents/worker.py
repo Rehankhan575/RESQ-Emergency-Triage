@@ -174,6 +174,15 @@ def serve_dev_html():
     server_thread.start()
 
 def main():
+    vad_flag = os.getenv("USE_VAD_TURN_DETECTION", "true")
+    tts_flag = os.getenv("USE_STREAMING_TTS", "true")
+    print(
+        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag}",
+        flush=True,
+    )
+    logger.info(
+        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag}"
+    )
     if "--dev" in sys.argv:
         sys.argv.remove("--dev")
         serve_dev_html()

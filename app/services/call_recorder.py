@@ -57,13 +57,22 @@ def start_recording(room: rtc.Room, session_id: str):
     recordings_dir = os.getenv("RECORDINGS_DIR", "recordings")
     os.makedirs(recordings_dir, exist_ok=True)
     filepath = os.path.join(recordings_dir, f"{session_id}.wav")
-    
+
+    # Check for already subscribed audio tracks
+    for p in room.remote_participants.values():
+        for pub in p.track_publications.values():
+            if pub.track and pub.track.kind == rtc.TrackKind.KIND_AUDIO:
+                if session_id not in _recording_tasks:
+                    logger.info(f"Attaching recording to existing track for {session_id}")
+                    task = asyncio.create_task(_record_track(pub.track, filepath))
+                    _recording_tasks[session_id] = task
+
     @room.on("track_subscribed")
     def on_track_subscribed(track: rtc.Track, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
         if track.kind == rtc.TrackKind.KIND_AUDIO:
             if session_id in _recording_tasks:
                 return
-            
+            logger.info(f"Attaching recording on track_subscribed for {session_id}")
             task = asyncio.create_task(_record_track(track, filepath))
             _recording_tasks[session_id] = task
 

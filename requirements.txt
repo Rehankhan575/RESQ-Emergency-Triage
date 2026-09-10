@@ -14,3 +14,4 @@ httpx
 aiosqlite
 livekit-plugins-deepgram
 livekit
+webrtcvad
