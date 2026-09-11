@@ -27,6 +27,8 @@ app = FastAPI(title="SIH Triage API", lifespan=lifespan)
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith("/dashboard"):
+            if request.url.path == "/dashboard/silent.html":
+                return await call_next(request)
             if not request.session.get("user"):
                 return RedirectResponse(url="/login", status_code=303)
         return await call_next(request)
