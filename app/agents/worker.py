@@ -176,12 +176,13 @@ def serve_dev_html():
 def main():
     vad_flag = os.getenv("USE_VAD_TURN_DETECTION", "true")
     tts_flag = os.getenv("USE_STREAMING_TTS", "true")
+    fillers_flag = os.getenv("ENABLE_FILLERS", "false")
     print(
-        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag}",
+        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag} ENABLE_FILLERS={fillers_flag}",
         flush=True,
     )
     logger.info(
-        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag}"
+        f"[CONFIG] USE_VAD_TURN_DETECTION={vad_flag} USE_STREAMING_TTS={tts_flag} ENABLE_FILLERS={fillers_flag}"
     )
     if "--dev" in sys.argv:
         sys.argv.remove("--dev")

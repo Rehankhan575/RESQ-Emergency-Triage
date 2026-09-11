@@ -25,7 +25,7 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 # Kill-switches: set either env var to "false" to restore previous behavior.
 VAD_SUPPORTED_RATES = {8000, 16000, 32000, 48000}
 VAD_FRAME_MS = 20
-VAD_SILENCE_MS = 800
+VAD_SILENCE_MS = 1200
 VAD_AGGRESSIVENESS = 3
 
 # ── Persistent HTTP client (Fix 4) ──────────────────────────────────────────
@@ -38,6 +38,9 @@ async def _get_http_client() -> httpx.AsyncClient:
         _http_client = httpx.AsyncClient()
     return _http_client
 
+
+# ── Environment flags ────────────────────────────────────────────────────────
+ENABLE_FILLERS = os.getenv("ENABLE_FILLERS", "false").lower() in ("true", "1", "yes")
 
 # ── Greeting TTS cache (synthesize once to disk, reuse across process launches) ─
 _GREETING_TEXT = "Namaste, main aapki madad ke liye yahan hoon. Kripya apni emergency bataayein."
@@ -339,26 +342,28 @@ class TriageVoiceAgent:
         # Part B: per-turn filler gate keyed by turn_id so it survives model fallback retries
         self._filler_played_for_turn_id: Optional[str] = None
         self.filler_pcms: list[tuple[bytes, int, int]] = []
-        filler_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "fillers")
-        
-        try:
-            if not os.path.exists(filler_dir):
-                logger.warning(f"filler_load_failed: Directory {filler_dir} not found, continuing without filler playback")
-            else:
-                for f in sorted(os.listdir(filler_dir)):
-                    if f.endswith(".wav"):
-                        with wave.open(os.path.join(filler_dir, f), "rb") as wf:
-                            raw_pcm = wf.readframes(wf.getnframes())
-                            sample_rate = wf.getframerate()
-                            num_channels = wf.getnchannels()
-                            self.filler_pcms.append((raw_pcm, sample_rate, num_channels))
-                if not self.filler_pcms:
-                    logger.warning("filler_load_failed: No valid wav files found, continuing without filler playback")
+        if ENABLE_FILLERS:
+            filler_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "fillers")
+            try:
+                if not os.path.exists(filler_dir):
+                    logger.warning(f"filler_load_failed: Directory {filler_dir} not found, continuing without filler playback")
                 else:
-                    logger.info(f"Loaded {len(self.filler_pcms)} filler clips")
-        except Exception as e:
-            logger.warning(f"filler_load_failed: {e}, continuing without filler playback")
-            self.filler_pcms = []
+                    for f in sorted(os.listdir(filler_dir)):
+                        if f.endswith(".wav"):
+                            with wave.open(os.path.join(filler_dir, f), "rb") as wf:
+                                raw_pcm = wf.readframes(wf.getnframes())
+                                sample_rate = wf.getframerate()
+                                num_channels = wf.getnchannels()
+                                self.filler_pcms.append((raw_pcm, sample_rate, num_channels))
+                    if not self.filler_pcms:
+                        logger.warning("filler_load_failed: No valid wav files found, continuing without filler playback")
+                    else:
+                        logger.info(f"Loaded {len(self.filler_pcms)} filler clips")
+            except Exception as e:
+                logger.warning(f"filler_load_failed: {e}, continuing without filler playback")
+                self.filler_pcms = []
+        else:
+            logger.info("Fillers disabled (ENABLE_FILLERS=false)")
 
         # Conversation history — alternating user / model strings
         self.history: list[str] = []
@@ -400,7 +405,8 @@ class TriageVoiceAgent:
         logger.info(
             f"[CONFIG] session={self.session_id} "
             f"USE_VAD_TURN_DETECTION={os.getenv('USE_VAD_TURN_DETECTION', 'true')} "
-            f"USE_STREAMING_TTS={os.getenv('USE_STREAMING_TTS', 'true')}"
+            f"USE_STREAMING_TTS={os.getenv('USE_STREAMING_TTS', 'true')} "
+            f"ENABLE_FILLERS={ENABLE_FILLERS}"
         )
         # Greet caller — synthesize concurrently with track publishing so bytes
         # are ready (or already cached) by the time the track is subscribed.
@@ -628,31 +634,34 @@ class TriageVoiceAgent:
         history_before_turn = list(self.history)
         self.history.append(transcript)
 
-        # Fix 1: single task with a soft-deadline filler, NOT cancel-and-restart
+        # Single task: if fillers enabled, wait 1.3s before playing a filler clip.
+        # If fillers disabled, wait directly for LLM response without any filler interruption.
         task = asyncio.create_task(
             process_turn(transcript, history_before_turn, previous_state=self.current_state)
         )
         success, result = False, {}
         try:
-            # Fast path: wait 1.3s — most turns with a warm model finish here
-            done, _ = await asyncio.wait({task}, timeout=1.3)
-            if task in done:
-                success, result = task.result()
+            if ENABLE_FILLERS and self.filler_pcms:
+                # Fast path: wait 1.3s — most turns with a warm model finish here
+                done, _ = await asyncio.wait({task}, timeout=1.3)
+                if task in done:
+                    success, result = task.result()
+                else:
+                    # LLM is slow — play one filler clip so caller doesn't hear dead air.
+                    if self._filler_played_for_turn_id != turn_id:
+                        self._filler_played_for_turn_id = turn_id
+                        self.filler_played_this_turn = True
+                        available = [i for i in range(len(self.filler_pcms)) if i != self.last_filler_index]
+                        if not available:
+                            available = [self.last_filler_index] if self.last_filler_index is not None else [0]
+                        self.last_filler_index = random.choice(available)
+                        raw_pcm, sample_rate, num_channels = self.filler_pcms[self.last_filler_index]
+                        logger.info("filler_playback_start (adaptive: LLM exceeded 1.3s)")
+                        await self.play_audio_pcm(raw_pcm, sample_rate, num_channels, is_real=False)
+                    # Wait for the real result with the outer deadline
+                    success, result = await asyncio.wait_for(task, timeout=12.0)
             else:
-                # LLM is slow — play one filler clip so caller doesn't hear dead air.
-                # Part B: guard by turn_id so at most one filler plays per turn,
-                # even across model-fallback retries underneath.
-                if self.filler_pcms and self._filler_played_for_turn_id != turn_id:
-                    self._filler_played_for_turn_id = turn_id
-                    self.filler_played_this_turn = True  # keep old boolean in sync
-                    available = [i for i in range(len(self.filler_pcms)) if i != self.last_filler_index]
-                    if not available:
-                        available = [self.last_filler_index] if self.last_filler_index is not None else [0]
-                    self.last_filler_index = random.choice(available)
-                    raw_pcm, sample_rate, num_channels = self.filler_pcms[self.last_filler_index]
-                    logger.info("filler_playback_start (adaptive: LLM exceeded 1.3s)")
-                    await self.play_audio_pcm(raw_pcm, sample_rate, num_channels, is_real=False)
-                # Wait for the real result with the outer deadline
+                # Fillers disabled: wait directly for LLM turn without filler
                 success, result = await asyncio.wait_for(task, timeout=12.0)
         except asyncio.TimeoutError:
             task.cancel()
@@ -713,7 +722,7 @@ class TriageVoiceAgent:
         await broadcast_to_backend(
             self.session_id, "triage_update", self.current_state
         )
-        escalation_msg = "Maaf karein, main aapko human operator se jod raha hoon."
+        escalation_msg = "Aapki situation mein human assistance zaroori hai. Main abhi ek officer se connect kar raha hoon — please line par rahein."
         self.history.append(escalation_msg)
         logger.info("ESCALATION TRIGGERED: Handing off to human operator.")
         await self.say(escalation_msg)

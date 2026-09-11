@@ -106,6 +106,21 @@ async def geocode(location: str = Query(..., description="Location string to geo
     if last_exc is not None:
         raise HTTPException(status_code=502, detail=f"Geocoding failed: {last_exc}")
 
+    if not results and "," in query_location:
+        # Fallback: callers often give specific building/room prefixes like "Building C, Karnavati University, Gandhinagar".
+        # If the exact sub-building isn't indexed in OpenStreetMap, progressively strip the leftmost segment
+        # to geocode the campus, street, or city.
+        parts = [p.strip() for p in query_location.split(",") if p.strip()]
+        while not results and len(parts) > 1:
+            parts.pop(0)
+            fallback_query = ", ".join(parts)
+            logger.info(f"Nominatim fallback: retrying with broader location: {fallback_query!r}")
+            try:
+                results = await _nominatim_request(fallback_query)
+            except Exception as e:
+                logger.warning(f"Nominatim fallback failed for {fallback_query!r}: {e}")
+                break
+
     if not results:
         raise HTTPException(status_code=404, detail=f"Location not found: {location!r}")
 

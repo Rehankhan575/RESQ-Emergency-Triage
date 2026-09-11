@@ -60,20 +60,21 @@ async def submit_silent_report(form: SilentReportForm, db: AsyncSession = Depend
     await db.commit()
     
     # Broadcast to dashboard via the exact same pipeline voice uses
+    triage_data = triage_state.model_dump()
+    triage_data["channel"] = "silent_form"          # tag as silent form channel
+    triage_data["people_affected"] = form.people_affected  # ensure int value preserved
+    # Include description in reasoning so operator sees it in the AI Reasoning box
+    triage_data["reasoning"] = (
+        f"Silent Form — {form.description}"
+        + (f" | Callback: {form.callback_number}" if form.callback_number else "")
+    )
+    
     payload = BroadcastPayload(
         event_type="triage_update",
-        data={
-            "emergency_type": form.emergency_type.value,
-            "location": form.location,
-            "severity": None,
-            "confidence": 1.0,
-            "flag_for_human": True,
-            "channel": "silent_form"
-        }
+        data=triage_data
     )
     
     # This also handles incident clustering synchronously because broadcast_event does it!
-    # Wait, broadcast_event in calls.py expects a string session_id and BroadcastPayload
     await broadcast_event(session_id, payload, db=db)
     
     # Send a separate transcript update so the operator can read the description

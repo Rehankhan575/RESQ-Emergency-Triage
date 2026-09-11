@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Emergency Triage — Control Dashboard</title>
+<title>RESQ — Emergency Triage Control Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -99,6 +99,25 @@
     letter-spacing: 0.08em;
     color: var(--text-p);
     font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+  }
+  .brand-resq {
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
+  }
+  .brand-dash {
+    color: var(--text-t);
+    font-weight: 500;
+    margin: 0 4px;
+    opacity: 0.8;
+  }
+  .brand-label {
+    color: var(--text-p);
+    font-weight: 600;
+    letter-spacing: 0.08em;
   }
   .live-dot {
     width: 7px; height: 7px;
@@ -480,7 +499,9 @@
   <!-- ═══════════════ HEADER ═══════════════ -->
   <header class="header">
     <div class="live-dot pulse" id="statusDot"></div>
-    <span class="header-title">EMERGENCY TRIAGE</span>
+    <span class="header-title">
+      <span class="brand-resq">RESQ</span><span class="brand-dash">-</span><span class="brand-label">EMERGENCY TRIAGE</span>
+    </span>
     <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
     <span class="badge" style="font-size:10px;letter-spacing:0.06em">CONNECTED</span>
     <span class="badge" style="font-size:10px;letter-spacing:0.06em;margin-left:4px">HI-IN / EN-IN</span>

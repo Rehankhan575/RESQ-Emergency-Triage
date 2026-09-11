@@ -16,15 +16,14 @@ logger = logging.getLogger("voice_agent")
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.8-flash",
 ]
 MODEL_NAME = MODEL_CANDIDATES[0]
 
-# Per-attempt hard ceiling — short enough that the fallback loop can exhaust
-# MODEL_CANDIDATES within the outer wait_for() budget in voice_agent.py (8s).
-_PER_ATTEMPT_TIMEOUT_S = 3.5
+# Per-attempt hard ceiling — allows models to respond comfortably without premature abortion
+_PER_ATTEMPT_TIMEOUT_S = 4.5
 
 
 async def warm_up_gemini_connection() -> None:
