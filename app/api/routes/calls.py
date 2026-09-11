@@ -191,15 +191,50 @@ async def broadcast_event(session_id: str, payload: BroadcastPayload, db: AsyncS
         from sqlalchemy import select
         call_res = await db.execute(select(CallLogDB).where(CallLogDB.session_id == session_id))
         call_log = call_res.scalars().first()
-        if call_log:
-            history = list(call_log.triage_history) if call_log.triage_history else []
-            history.append(payload.data)
-            call_log.triage_history = history
-            if incident_id:
-                call_log.incident_id = incident_id
+        if not call_log:
+            call_log = CallLogDB(
+                session_id=session_id,
+                channel=data.get("channel", "voice"),
+                language_detected="",
+                full_transcript=[],
+                triage_history=[],
+                is_complete=False,
+                dropped_at=None
+            )
+            db.add(call_log)
+
+        history = list(call_log.triage_history) if call_log.triage_history else []
+        history.append(payload.data)
+        call_log.triage_history = history
+        if incident_id:
+            call_log.incident_id = incident_id
+        await db.commit()
+
+    elif payload.event_type == "transcript_chunk":
+        data = payload.data
+        if data and data.get("text"):
+            from sqlalchemy import select
+            call_res = await db.execute(select(CallLogDB).where(CallLogDB.session_id == session_id))
+            call_log = call_res.scalars().first()
+            if not call_log:
+                call_log = CallLogDB(
+                    session_id=session_id,
+                    channel="voice",
+                    language_detected="",
+                    full_transcript=[],
+                    triage_history=[],
+                    is_complete=False,
+                    dropped_at=None
+                )
+                db.add(call_log)
+
+            transcript_list = list(call_log.full_transcript) if call_log.full_transcript else []
+            transcript_list.append({
+                "speaker": data.get("speaker", "user"),
+                "text": data.get("text", "")
+            })
+            call_log.full_transcript = transcript_list
             await db.commit()
-        
-        # Removed duplicate urgency_breakdown_base code
 
     await ws_manager.broadcast(session_id, payload.event_type, payload.data)
     return {"status": "broadcasted"}

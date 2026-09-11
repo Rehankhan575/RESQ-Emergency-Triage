@@ -25,7 +25,7 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 # Kill-switches: set either env var to "false" to restore previous behavior.
 VAD_SUPPORTED_RATES = {8000, 16000, 32000, 48000}
 VAD_FRAME_MS = 20
-VAD_SILENCE_MS = 1200
+VAD_SILENCE_MS = int(os.getenv("VAD_SILENCE_MS", "800"))
 VAD_AGGRESSIVENESS = 3
 
 # ── Persistent HTTP client (Fix 4) ──────────────────────────────────────────

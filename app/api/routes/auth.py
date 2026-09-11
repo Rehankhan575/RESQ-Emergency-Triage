@@ -22,8 +22,8 @@ def verify_password(plain_password: str, salt_hex: str, hashed_password: str) ->
         return False
 
 @router.get("/login")
-async def login_page(request: Request):
-    if request.session.get("user"):
+async def login_page(request: Request, force: bool = False):
+    if not force and request.session.get("user"):
         return RedirectResponse(url="/dashboard/", status_code=303)
     
     _DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dashboard", "static")

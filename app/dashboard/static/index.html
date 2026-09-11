@@ -508,6 +508,10 @@
     <div style="flex:1"></div>
     <button class="btn btn-sim" onclick="simulateCritical()">Simulate Critical</button>
     <span style="font-size:11px;color:var(--text-t);margin-left:16px;font-variant-numeric:tabular-nums" id="wallclock"></span>
+    <a href="/logout" title="Logout session" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);color:#FDA4AF;font-size:11px;font-weight:600;border-radius:var(--radius-sm);letter-spacing:0.04em;margin-left:14px;cursor:pointer;transition:all 0.15s ease;" onmouseover="this.style.background='rgba(244,63,94,0.2)';this.style.borderColor='rgba(244,63,94,0.5)'" onmouseout="this.style.background='rgba(244,63,94,0.08)';this.style.borderColor='rgba(244,63,94,0.25)'">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+      LOGOUT
+    </a>
   </header>
 
   <!-- ═══════════════ ANALYTICS STRIP ═══════════════ -->
@@ -1281,11 +1285,14 @@ function ingestCall(raw) {
     transcript:        existing?.transcript || [],
   };
 
-  // If DB sent full_transcript (list of strings), rebuild as alternating agent/user
+  // If DB sent full_transcript, rebuild transcript array correctly
   if (raw.full_transcript && raw.full_transcript.length && !existing) {
-    calls[raw.session_id].transcript = raw.full_transcript.map((text, i) => ({
-      speaker: i % 2 === 0 ? 'agent' : 'user', text
-    }));
+    calls[raw.session_id].transcript = raw.full_transcript.map((item, i) => {
+      if (typeof item === 'object' && item !== null && item.text) {
+        return { speaker: item.speaker || (i % 2 === 0 ? 'agent' : 'user'), text: item.text };
+      }
+      return { speaker: i % 2 === 0 ? 'agent' : 'user', text: String(item) };
+    });
   }
 }
 
